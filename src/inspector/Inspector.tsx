@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { evalCurve } from '../model/curve'
+import Go2BlockPanel from '../go2blocks/Go2BlockPanel'
 import { evaluateClip } from '../model/evaluate'
 import type { Interp } from '../model/types'
 import { clipLocked, editLock, editTarget, getEditor, trackLocked, useEditor } from '../store/store'
@@ -15,6 +16,11 @@ const INTERPS: [Interp, string][] = [['linear', '선형'], ['bezier', '이즈'],
 const isAngle = (ch: string, joint: boolean) => joint || /roll|pitch|yaw/.test(ch)
 
 export default function Inspector() {
+  const go2 = useEditor(s => s.project.actors.find(a => a.id === s.sel.actorId && a.robot === 'go2')?.id)
+  return <>{go2 && <Go2BlockPanel key={go2} actorId={go2} />}<InspectorBody /></>
+}
+
+function InspectorBody() {
   const ed = getEditor()
   const { project, defs, frame, autoKey, sel, editing } = useEditor(s => s)
   const [deg, setDeg] = useState(true)
