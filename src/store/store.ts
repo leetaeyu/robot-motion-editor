@@ -3,7 +3,7 @@ import { evalCurve, makeKey } from '../model/curve'
 import { simplifyCurve, simplifyTolerance } from '../model/simplify'
 import { addActor as addActorTo, emptyProject, newProject, nextClipName } from '../model/defaults'
 import { evaluateClip, type RobotDefs } from '../model/evaluate'
-import { inCrossfade, resolve, sortedItems, validTrack } from '../model/sequence'
+import { inCrossfade, itemLen, resolve, sortedItems, validTrack } from '../model/sequence'
 import { applyRestPose } from '../model/restPose'
 import type { Actor, Item, Clip, Curve, Interp, Project, Tan, Track } from '../model/types'
 import { validVideoTrack, videoTrack } from '../model/video'
@@ -47,6 +47,8 @@ export interface EditorState {
   importClipToActor(clip: Clip): { actorId: string; itemId: string } | null
   // New actor (no default clip) for the clip's robot with the clip at `start`; null = unknown clip. One undo entry.
   placeClipAsNewActor(clipId: string, start: number): { actorId: string; itemId: string } | null
+  // Add the clip to the assets (name deduped) and place it right after the actor's last item; new item id, null = locked/unknown/robot mismatch. One undo entry.
+  appendClip(actorId: string, clip: Clip): string | null
   simplifyClip(clipId: string, rot?: number, pos?: number): number
   deleteClip(clipId: string): boolean
   addMedia(name: string, durationF: number): string
@@ -69,6 +71,13 @@ const MAX_UNDO = 200
 const ROOT = ['root.x', 'root.y', 'root.z', 'root.roll', 'root.pitch', 'root.yaw']
 
 // Lock rules: an actor's motion track locked; a clip is locked if ANY item referencing it sits on a locked track.
+// Put `clip` in the draft's assets, renaming it `name_2`, `name_3`… if its robot already has that name.
+function addUniqueClip(p: Project, clip: Clip) {
+  const taken = new Set(Object.values(p.clips).filter(c => c.robot === clip.robot).map(c => c.name))
+  let name = clip.name
+  for (let n = 2; taken.has(name); n++) name = `${clip.name}_${n}`
+  p.clips[clip.id] = { ...clip, name }
+}
 export const trackLocked = (p: Project, actorId: string) => p.sequence.tracks.some(t => t.kind === 'motion' && t.actorId === actorId && t.locked)
 export const clipLocked = (p: Project, clipId: string) => p.sequence.tracks.some(t => t.locked && t.items.some(i => i.refId === clipId))
 
@@ -380,16 +389,27 @@ export function createEditorStore(defs: RobotDefs, initial: Project = newProject
         tryEdit(p => {
           const exists = p.actors.some(a => a.robot === clip.robot)
           if (!exists) Object.assign(p, addActorTo(p, clip.robot, false))
-          const taken = new Set(Object.values(p.clips).filter(c => c.robot === clip.robot).map(c => c.name))
-          let name = clip.name
-          for (let n = 2; taken.has(name); n++) name = `${clip.name}_${n}`
-          p.clips[clip.id] = { ...clip, name }
+          addUniqueClip(p, clip)
           if (exists) return true
           const actor = p.actors.at(-1)!, track = p.sequence.tracks.find(t => t.kind === 'motion' && t.actorId === actor.id)!
           const item = { id: crypto.randomUUID(), refId: clip.id, start: 0, trimIn: 0, trimOut: clip.length }
           track.items.push(item)
           out = { actorId: actor.id, itemId: item.id }
           return true
+        })
+        return out
+      },
+      appendClip: (actorId, clip) => {
+        let out: string | null = null
+        tryEdit(p => {
+          const actor = p.actors.find(a => a.id === actorId)
+          const track = p.sequence.tracks.find(t => t.kind === 'motion' && t.actorId === actorId)
+          if (!actor || !track || track.locked || actor.robot !== clip.robot) return false
+          addUniqueClip(p, clip)
+          const item = { id: crypto.randomUUID(), refId: clip.id, start: Math.max(0, ...track.items.map(i => i.start + itemLen(i))), trimIn: 0, trimOut: clip.length }
+          track.items.push(item)
+          out = item.id
+          return validTrack(track.items)
         })
         return out
       },
