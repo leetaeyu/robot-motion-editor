@@ -7,7 +7,7 @@ import { makeKey } from '../model/curve'
 import { evaluateClip, type Pose, type RobotDefs } from '../model/evaluate'
 import type { Clip } from '../model/types'
 import { normalizedPose, posesToCsv, samplePoses } from './csv'
-import { csvToClip, isHeadedCsv } from './importCsv'
+import { csvToClip, isHeadedCsv, parseCsvPoses } from './importCsv'
 
 const load = loadDef
 const defs: RobotDefs = { g1: load('g1'), go2: load('go2') }
@@ -173,4 +173,26 @@ test('isHeadedCsv: header detection for skipping the fps dialog', () => {
   expect(isHeadedCsv('\n a, Frequency(FPS) ,b\r\n1,2,3\n')).toBe(true)
   expect(isHeadedCsv('0,0,0,0,0,0,1\n')).toBe(false)
   expect(isHeadedCsv('')).toBe(false)
+})
+
+const withFps = (csv: string, fps: number) => edit(csv, r => r.slice(1).forEach(c => { c[0] = String(fps) }))
+
+test('headed 50fps → resampled to 60fps', () => {
+  const clip = csvToClip(withFps(headed(6, defs.go2), 50), defs, undefined, 'r50') // root.x = i * 0.01 per source row
+  expect(clip.length).toBe(Math.floor(5 * 60 / 50) + 1)
+  const x = clip.channels['root.x'].keys
+  expect(x[0].v).toBeCloseTo(0)
+  expect(x.at(-1)!.v).toBeCloseTo(0.05)
+  expect(x[3].v).toBeCloseTo(3 * 50 / 60 * 0.01)
+})
+
+test('headed 25fps still rejected', () => {
+  expect(() => csvToClip(withFps(headed(4, defs.go2), 25), defs, undefined, 'x')).toThrow('지원하지 않는 fps')
+})
+
+test('parseCsvPoses keeps source fps and frames', () => {
+  const r = parseCsvPoses(withFps(headed(6, defs.go2), 50), defs, undefined)
+  expect(r).toMatchObject({ robot: 'go2', fps: 50 })
+  expect(r.poses).toHaveLength(6)
+  expect(r.poses[2].rootPos[0]).toBeCloseTo(0.02)
 })

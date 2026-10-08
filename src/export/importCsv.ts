@@ -1,7 +1,7 @@
 import { makeKey } from '../model/curve'
-import type { RobotDefs } from '../model/pose'
+import type { Pose, RobotDefs } from '../model/pose'
 import { nearestAngle, quatToEuler, type Quat } from '../model/rootMath'
-import { slerp } from '../model/sequence'
+import { blendPose } from '../model/sequence'
 import type { Clip } from '../model/types'
 import type { RobotKind } from '../robot/types'
 import { HEAD_FIXED, ROBOT_TYPE } from './csv'
@@ -63,7 +63,7 @@ function parseHeaded(head: string[], lines: Line[], defs: RobotDefs): Parsed {
     if (at('DOF Number', l.cells, l.n) !== dof || (typeCol !== undefined && at('RobotType', l.cells, l.n) !== type)) throw new Error(`RobotType/DOF 값이 행마다 다릅니다 (${l.n}행)`)
     return names.map(n => at(n, l.cells, l.n))
   })
-  if (fps !== 30 && fps !== 60) throw new Error(`지원하지 않는 fps입니다: ${fps}`)
+  if (fps !== 30 && fps !== 50 && fps !== 60) throw new Error(`지원하지 않는 fps입니다: ${fps}`)
   return { robot, rows, fps }
 }
 
@@ -74,38 +74,42 @@ export const isHeadedCsv = (text: string) => {
   return !!first && isHeaded(first.split(','))
 }
 
-// Unitree RL motion CSV -> editable clip with a linear key on every channel/frame.
+// Unitree RL motion CSV -> poses at the file's own fps.
 // srcFps is only used for the headerless format; the headed one carries its own.
-export function csvToClip(text: string, defs: RobotDefs, srcFps: 30 | 60 | undefined, name: string): Clip {
+export function parseCsvPoses(text: string, defs: RobotDefs, srcFps: 30 | 60 | undefined): { robot: RobotKind; fps: number; poses: Pose[] } {
   const lines: Line[] = []
   text.split(/\r?\n/).forEach((line, i) => { if (line.trim()) lines.push({ cells: line.split(',').map(s => s.trim()), n: i + 1 }) })
   if (!lines.length) throw new Error('데이터가 없습니다')
   const headed = isHeaded(lines[0].cells)
   if (headed && lines.length < 2) throw new Error('데이터가 없습니다')
   const { robot, rows, fps } = headed ? parseHeaded(lines[0].cells, lines.slice(1), defs) : parseHeadless(lines, srcFps ?? 60)
+  return { robot, fps, poses: rows.map(r => ({ rootPos: [r[0], r[1], r[2]], rootQuat: r.slice(3, 7) as Quat, q: r.slice(7) })) }
+}
 
-  let frames = rows
-  if (fps === 30) {
-    frames = []
-    rows.forEach((r, i) => {
-      frames.push(r)
-      const n = rows[i + 1]
-      if (!n) return
-      const q = slerp(r.slice(3, 7) as Quat, n.slice(3, 7) as Quat, 0.5)
-      frames.push(r.map((v, j) => (j >= 3 && j < 7 ? q[j - 3] : (v + n[j]) / 2)))
-    })
-  }
+// Poses at `fps` -> 60fps editable clip with a linear key on every channel/frame.
+// 60fps frame f samples source time f * fps / 60: positions/joints lerped, root quaternion slerped.
+export function posesToClip(poses: Pose[], fps: number, robot: RobotKind, defs: RobotDefs, name: string): Clip {
+  const frames = fps === 60 ? poses : Array.from({ length: Math.floor((poses.length - 1) * 60 / fps) + 1 }, (_, f) => {
+    const t = f * fps / 60, i = Math.floor(t)
+    return t === i ? poses[i] : blendPose(poses[i], poses[i + 1], t - i)
+  })
 
   const names = ['root.x', 'root.y', 'root.z', 'root.roll', 'root.pitch', 'root.yaw', ...defs[robot].joints.map(j => j.name)]
   const vals: number[][] = names.map(() => [])
   let prev: number[] | null = null
-  for (const r of frames) {
-    const e = quatToEuler(r.slice(3, 7) as Quat)
+  for (const p of frames) {
+    const e = quatToEuler(p.rootQuat)
     const u: number[] = prev ? e.map((v, i) => nearestAngle(v, prev![i])) : e
     prev = u
-    ;[r[0], r[1], r[2], ...u, ...r.slice(7)].forEach((v, i) => vals[i].push(v))
+    ;[...p.rootPos, ...u, ...p.q].forEach((v, i) => vals[i].push(v))
   }
   const channels: Clip['channels'] = {}
   names.forEach((n, i) => { channels[n] = { keys: vals[i].map((v, f) => makeKey(f, v, 'linear')) } })
   return { id: crypto.randomUUID(), name, robot, length: frames.length, channels }
+}
+
+// Unitree RL motion CSV -> editable clip.
+export function csvToClip(text: string, defs: RobotDefs, srcFps: 30 | 60 | undefined, name: string): Clip {
+  const { robot, fps, poses } = parseCsvPoses(text, defs, srcFps)
+  return posesToClip(poses, fps, robot, defs, name)
 }
