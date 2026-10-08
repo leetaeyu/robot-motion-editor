@@ -23,17 +23,27 @@ const last = (c: Clip, ch: string) => c.channels[ch].keys.at(-1)!.v
 const first = (c: Clip, ch: string) => c.channels[ch].keys[0].v
 const tEnd = (c: Clip) => (c.length - 1) * 50 / 60 // source frame sampled by the clip's last 60fps key
 
-test('move N from value: 1.0m → 5 loops, length', () => {
-  expect(blockActual(move, walk, 1.0)).toEqual({ n: 5, actual: expect.closeTo(1.0, 5) })
+// what the clip really travels: planar distance (m) or yaw (degrees) from its first to its last key
+const travel = (c: Clip, b: Block) => b.id === 'move' ? Math.hypot(last(c, 'root.x'), last(c, 'root.y')) : last(c, 'root.yaw') * 180 / Math.PI
+const expectTravel = (b: Block, poses: Pose[], fps: number, value: number) => {
+  const r = blockActual(b, poses, value)!, c = buildBlockClip(b, poses, fps, value, defs)
+  expect(Math.abs(travel(c, b) - r.actual)).toBeLessThan(Math.max(0.02 * Math.abs(r.actual), 0.01))
+  return r
+}
+
+test('move: actual counts head + N·loop + tail; 1.0m → 4 loops', () => {
+  // head 0.10m + 4 × 0.20m + tail 0.09m
+  expect(blockActual(move, walk, 1.0)).toEqual({ n: 4, actual: expect.closeTo(0.99, 5) })
   const clip = buildBlockClip(move, walk, 50, 1.0, defs)
   expect(clip.robot).toBe('go2')
-  expect(clip.length).toBe(Math.floor((10 + 20 * 5 + 10 - 1) * 60 / 50) + 1)
+  expect(clip.length).toBe(Math.floor((10 + 20 * 4 + 10 - 1) * 60 / 50) + 1)
+  expectTravel(move, walk, 50, 1.0)
 })
 
-test('move root advances head + N·loop + tail distance, starts at origin', () => {
+test('move root starts at origin and runs straight', () => {
   const clip = buildBlockClip(move, walk, 50, 1.0, defs)
   expect(first(clip, 'root.x')).toBeCloseTo(0)
-  expect(last(clip, 'root.x')).toBeCloseTo(0.01 * tEnd(clip)) // head + 5 loops + tail, all at 0.01m/frame
+  expect(last(clip, 'root.x')).toBeCloseTo(0.01 * tEnd(clip))
   expect(last(clip, 'root.y')).toBeCloseTo(0)
 })
 
@@ -42,14 +52,18 @@ test('tiny value → n = 1', () => {
   expect(blockActual(rotate, turn, 5)!.n).toBe(1)
 })
 
-test('rotate sign picks left/right spec; yaw delta sign matches', () => {
-  const per = 0.02 * 20 * 180 / Math.PI
-  expect(blockActual(rotate, turn, 45)).toEqual({ n: 2, actual: expect.closeTo(2 * per, 5) })
-  expect(blockActual(rotate, turn, -45)).toEqual({ n: 2, actual: expect.closeTo(-2 * per, 5) })
-  const l = buildBlockClip(rotate, turn, 50, 45, defs), r = buildBlockClip(rotate, turn, 50, -45, defs)
-  expect(first(l, 'root.yaw')).toBeCloseTo(0)
-  expect(last(l, 'root.yaw')).toBeCloseTo(0.02 * tEnd(l))
-  expect(last(r, 'root.yaw')).toBeCloseTo(-0.02 * tEnd(r))
+test('huge value → n capped at 100, builds fast', () => {
+  expect(blockActual(move, walk, 1e6)!.n).toBe(100)
+  const t0 = performance.now()
+  buildBlockClip(move, walk, 50, 1e6, defs)
+  expect(performance.now() - t0).toBeLessThan(2000)
+})
+
+test('rotate sign picks left/right spec; actual = clip yaw', () => {
+  const r = expectTravel(rotate, turn, 50, 45), l = expectTravel(rotate, turn, 50, -45)
+  expect(r).toEqual({ n: 2, actual: expect.closeTo(0.02 * 49 * 180 / Math.PI, 5) }) // head 5 + 2×20 + tail 4 frames
+  expect(l).toEqual({ n: 2, actual: expect.closeTo(-0.02 * 49 * 180 / Math.PI, 5) })
+  expect(first(buildBlockClip(rotate, turn, 50, 45, defs), 'root.yaw')).toBeCloseTo(0)
 })
 
 test('fixed block: length = resampled source, rebased to origin', () => {
@@ -62,9 +76,9 @@ test('fixed block: length = resampled source, rebased to origin', () => {
   expect(first(clip, 'root.y')).toBeCloseTo(0)
 })
 
-test('name: Move_1m, Rotate_-46deg, Stretch', () => {
+test('name: Move_1m, Rotate_-56deg, Stretch', () => {
   expect(buildBlockClip(move, walk, 50, 1.0, defs).name).toBe('Move_1m')
-  expect(buildBlockClip(rotate, turn, 50, -45, defs).name).toBe('Rotate_-46deg')
+  expect(buildBlockClip(rotate, turn, 50, -45, defs).name).toBe('Rotate_-56deg')
   expect(buildBlockClip({ id: 'stretch', label: 'Stretch', kind: 'fixed' }, walk, 50, 0, defs).name).toBe('Stretch')
 })
 
@@ -75,16 +89,9 @@ test('loop seams stay continuous (blend): joint step at a seam ≤ largest in-lo
   expect(Math.max(...steps)).toBeLessThan(0.6) // sin period 10 @50fps sampled at 60fps: max step ≈ 0.52
 })
 
-test('real move.csv: 1.8m → actual within ±5% of n·perLoop, clip covers head + n·loop + tail', () => {
-  const m = GO2_BLOCKS.find(b => b.id === 'move')!
-  if (m.kind !== 'loop' || m.id !== 'move') throw new Error('move block')
-  const { poses, fps } = parseCsvPoses(readFileSync(new URL('../../public/go2-blocks/move.csv', import.meta.url), 'utf8'), defs, undefined)
-  const r = blockActual(m, poses, 1.8)!
-  expect(r.n).toBe(3)
-  expect(Math.abs(r.actual - 1.8) / 1.8).toBeLessThan(0.05)
-  const dist = (a: number, b: number) => Math.hypot(poses[b].rootPos[0] - poses[a].rootPos[0], poses[b].rootPos[1] - poses[a].rootPos[1])
-  const { head, tail } = m.spec
-  const expected = dist(head[0], head[1]) + r.actual + dist(tail[0], tail[1] - 1)
-  const clip = buildBlockClip(m, poses, fps, 1.8, defs)
-  expect(Math.abs(Math.hypot(last(clip, 'root.x'), last(clip, 'root.y')) - expected) / expected).toBeLessThan(0.05)
+test.each([['move', 1.8], ['move', 4], ['rotate', 90], ['rotate', -90], ['rotate', 400]] as const)('real %s.csv %s: shown actual = clip travel', (id, value) => {
+  const b = GO2_BLOCKS.find(b => b.id === id)!
+  const { poses, fps } = parseCsvPoses(readFileSync(new URL(`../../public/go2-blocks/${id}.csv`, import.meta.url), 'utf8'), defs, undefined)
+  const r = expectTravel(b, poses, fps, value)
+  expect(Math.sign(r.actual)).toBe(Math.sign(value))
 })
