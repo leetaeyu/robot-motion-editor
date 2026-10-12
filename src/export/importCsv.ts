@@ -4,7 +4,7 @@ import { nearestAngle, quatToEuler, type Quat } from '../model/rootMath'
 import { blendPose } from '../model/sequence'
 import type { Clip } from '../model/types'
 import type { RobotKind } from '../robot/types'
-import { HEAD_FIXED, ROBOT_TYPE } from './csv'
+import { HEAD_FIXED } from './csv'
 
 const NUM = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/ // decimal only: no hex, Infinity, blanks
 const ROBOT_BY_COLS = { 36: 'g1', 19: 'go2' } as const
@@ -46,8 +46,8 @@ function parseHeaded(head: string[], lines: Line[], defs: RobotDefs): Parsed {
   const dof = at('DOF Number', lines[0].cells, lines[0].n)
   const robot = ROBOT_BY_DOF[dof]
   if (!robot) throw new Error(`DOF Number가 29(G1) 또는 12(GO2)가 아닙니다: ${dof}`)
+  // RobotType is not trusted: real-robot GO2 logs write 0 (G1). DOF + joint columns decide the robot.
   const type = idx('RobotType') === undefined ? undefined : at('RobotType', lines[0].cells, lines[0].n)
-  if (type !== undefined && type !== ROBOT_TYPE[robot]) throw new Error(`RobotType(${type})과 DOF Number(${dof})가 맞지 않습니다`)
   const joints = defs[robot].joints.map(j => j.name)
   const missing = joints.filter(j => idx(j) === undefined)
   if (missing.length) throw new Error(`헤더에 관절 열이 없습니다: ${missing.join(', ')}`)

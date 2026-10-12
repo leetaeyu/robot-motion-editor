@@ -121,7 +121,6 @@ test('headed 30fps resampled to 60fps (2N-1 frames)', () => {
 test('headed: errors are Korean and name the row', () => {
   expect(() => csvToClip(edit(headed(3), r => { r[3][0] = '30' }), defs, 60, 'x')).toThrow('fps 값이 행마다 다릅니다')
   expect(() => csvToClip(edit(headed(3), r => r.slice(1).forEach(x => { x[0] = '24' })), defs, 60, 'x')).toThrow('지원하지 않는 fps입니다: 24')
-  expect(() => csvToClip(edit(headed(3), r => r.slice(1).forEach(x => { x[1] = '1' })), defs, 60, 'x')).toThrow('RobotType')
   expect(() => csvToClip(edit(headed(3), r => r.slice(1).forEach(x => { x[2] = '7' })), defs, 60, 'x')).toThrow('DOF Number')
   expect(() => csvToClip(edit(headed(3), r => { r[0][12] = 'bogus' }), defs, 60, 'x')).toThrow(`헤더에 관절 열이 없습니다: ${defs.g1.joints[1].name}`)
   expect(() => csvToClip(edit(headed(3), r => { r[2][5] = 'abc' }), defs, 60, 'x')).toThrow('3행에 숫자가 아닌')
@@ -135,6 +134,12 @@ test('headed: frequency(fps) column may be anywhere, not only first', () => {
   const clip = csvToClip(csv, defs, 30, 'x')
   expect(clip.length).toBe(3)
   expect(clip.channels['root.x'].keys.map(k => k.v)).toEqual([0, 0.01, 0.02])
+})
+
+test('headed: robot from DOF even when RobotType disagrees (real-robot logs write 0 for GO2)', () => {
+  const go2 = csvToClip(withFps(edit(headed(4, defs.go2), r => r.slice(1).forEach(x => { x[1] = '0' })), 50), defs, undefined, 'x')
+  expect(go2.robot).toBe('go2')
+  expect(csvToClip(edit(headed(3), r => r.slice(1).forEach(x => { x[1] = '1' })), defs, 60, 'x').robot).toBe('g1')
 })
 
 test('headed: duplicate header name and per-row RobotType/DOF mismatch rejected', () => {
