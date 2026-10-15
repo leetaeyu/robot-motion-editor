@@ -60,7 +60,7 @@ test('setValue with autoKey off does not create key', () => {
 })
 
 test('setValue with autoKey keys at current clip frame', () => {
-  s().toggleAutoKey(); s().setFrame(7); s().setValue(actor, ch, 1)
+  s().setLayer('clip'); s().toggleAutoKey(); s().setFrame(7); s().setValue(actor, ch, 1)
   expect(keyAt(ch, 7).v).toBe(1)
   expect(editTarget(s(), actor)).toEqual({ clipId: c, f: 7, itemId: item0().id })
   s().setFrame(500)
@@ -104,14 +104,14 @@ test('setInterp ease resets tangents, linear keeps them', () => {
 test('keyGroup keys every joint of group in one undo entry', () => {
   const arm = defs.g1.groups.find(g => g.name === '왼팔')!
   expect(arm.joints).toHaveLength(7)
-  s().setFrame(3); s().keyGroup(actor, '왼팔')
+  s().setLayer('clip'); s().setFrame(3); s().keyGroup(actor, '왼팔')
   for (const j of arm.joints) expect(keyAt(j, 3)).toBeDefined()
   s().undo()
   expect(Object.keys(s().project.clips[c].channels)).toHaveLength(0)
 })
 
 test('keyGroup 루트 keys 6 root channels with standing height', () => {
-  s().keyGroup(actor, '루트')
+  s().setLayer('clip'); s().keyGroup(actor, '루트')
   expect(Object.keys(s().project.clips[c].channels).sort()).toEqual(
     ['root.pitch', 'root.roll', 'root.x', 'root.y', 'root.yaw', 'root.z'])
   expect(keyAt('root.z', 0).v).toBeCloseTo(defs.g1.standingHeight)
@@ -152,7 +152,7 @@ test('deleteKeys prunes selection; undo/redo clear key selection', () => {
 })
 
 test('gesture: many setValue = one undo entry; edits after endGesture push again', () => {
-  s().toggleAutoKey()
+  s().setLayer('clip'); s().toggleAutoKey()
   const before = s().project
   s().beginGesture()
   for (let i = 1; i <= 5; i++) s().setValue(actor, ch, i * 0.1)
@@ -333,7 +333,7 @@ test('editTarget in clip view ignores trims', () => {
   s().trimItem(id, 'in', 30)
   s().openItem(id); s().setFrame(0)
   expect(editTarget(s(), actor)).toEqual({ clipId: c, f: 0, itemId: id })
-  s().toggleAutoKey(); s().setValue(actor, ch, 0.4)
+  s().setLayer('clip'); s().toggleAutoKey(); s().setValue(actor, ch, 0.4)
   expect(keyAt(ch, 0).v).toBeCloseTo(0.4)
   expect(s().sel.actorId).toBe(actor)
 })
@@ -351,7 +351,7 @@ test('editTarget sequence view: later item on overlap', () => {
 test('editTarget null without items; setValue ignored', () => {
   s().deleteItem(item0().id)
   expect(editTarget(s(), actor)).toBeNull()
-  s().toggleAutoKey(); s().setValue(actor, ch, 1); s().keyGroup(actor, '루트')
+  s().setLayer('clip'); s().toggleAutoKey(); s().setValue(actor, ch, 1); s().keyGroup(actor, '루트')
   expect(curve(ch).keys).toHaveLength(0)
 })
 
@@ -487,7 +487,7 @@ test('setClip: shrinking below a trim clamps the item', () => {
 
 // --- gestures (M5) ---
 test('undo during a gesture ends it first; endGesture then pops nothing', () => {
-  s().toggleAutoKey()
+  s().setLayer('clip'); s().toggleAutoKey()
   s().setKey(c, ch, 3, 1)
   const afterKey = s().project
   s().beginGesture(); s().setValue(actor, ch, 0.4)
@@ -504,7 +504,7 @@ test('beginGesture keeps redo until the gesture changes the project', () => {
   s().redo()
   expect(keyAt(ch, 3).v).toBe(1)
   s().undo()
-  s().toggleAutoKey()
+  s().setLayer('clip'); s().toggleAutoKey()
   s().beginGesture(); s().setValue(actor, ch, 0.2); s().endGesture()
   const p = s().project
   s().redo()
@@ -537,7 +537,7 @@ test('gizmoLock: root on the first frame of a stitched item', () => {
 
 test('setValue/keyGroup rejected in crossfade (sequence view), allowed in clip view', () => {
   expect(s().addItem(actor, c, 100)).toBe(true)
-  s().toggleAutoKey(); s().setFrame(110)
+  s().setLayer('clip'); s().toggleAutoKey(); s().setFrame(110)
   expect(editLock(s(), actor, ch)).toBe('crossfade')
   const before = s().project
   s().setValue(actor, ch, 0.5); s().keyGroup(actor, '왼팔'); s().keyGroup(actor, '루트')
@@ -549,7 +549,7 @@ test('setValue/keyGroup rejected in crossfade (sequence view), allowed in clip v
 
 test('setValue/keyGroup on stitch frame: root x/y/yaw rejected, z allowed', () => {
   expect(s().addItem(actor, c, 120)).toBe(true)
-  s().toggleAutoKey(); s().setFrame(120)
+  s().setLayer('clip'); s().toggleAutoKey(); s().setFrame(120)
   expect(editLock(s(), actor, 'root.z')).toBe(null)
   const before = s().project
   s().setValue(actor, 'root.x', 0.3); s().keyGroup(actor, '루트')
@@ -795,6 +795,19 @@ test('appendClip rejects locked track and robot mismatch', () => {
   expect(s().appendClip(go2, blockClip(30))).toBeNull()
   expect(s().project).toBe(locked)
   expect(before.clips).toEqual(locked.clips)
+})
+
+test('appendClip(null) makes a new GO2 actor with the clip at 0, one undo', () => {
+  const n = s().project.actors.length
+  const id = s().appendClip(null, blockClip(30))!
+  const p = s().project, a = p.actors.at(-1)!, t = p.sequence.tracks.find(t => t.actorId === a.id)!
+  expect(p.actors.length).toBe(n + 1)
+  expect(a.robot).toBe('go2')
+  expect(t.items).toEqual([expect.objectContaining({ id, start: 0, trimIn: 0, trimOut: 30 })])
+  expect(s().appendClip(a.id, blockClip(20))).not.toBeNull()
+  expect(s().project.sequence.tracks.find(t => t.actorId === a.id)!.items.map(i => i.start)).toEqual([0, 30])
+  s().undo(); s().undo()
+  expect(s().project.actors.length).toBe(n)
 })
 
 test('appendClip dedupes name', () => {

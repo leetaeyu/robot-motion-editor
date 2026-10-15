@@ -26,7 +26,7 @@ const expectCsvClose = (a: string, b: string, tol: number) => {
 const row = (n: number, over: Record<number, number> = {}) =>
   Array.from({ length: n }, (_, i) => (i === 6 ? 1 : over[i] ?? 0)).join(',')
 
-test('roundtrip: export → import → export at 60fps equals', () => {
+test('roundtrip: export → import → export at 50fps equals', () => {
   const proj = structuredClone(newProject())
   const [g1] = proj.actors
   const item = proj.sequence.tracks.find(t => t.actorId === g1.id)!.items[0]
@@ -42,12 +42,12 @@ test('roundtrip: export → import → export at 60fps equals', () => {
   expectCsvClose(csv1, posesToCsv(poseRows(imp), defs.g1), 1e-5)
 })
 
-test('30fps resampled to 60fps (2N-1 frames, midpoints interpolated)', () => {
+test('30fps resampled to 50fps (floor(2·50/30)+1 frames, interpolated)', () => {
   const clip = csvToClip([row(36, { 7: 0 }), row(36, { 7: 1 }), row(36, { 7: 0.5, 0: 2 })].join('\n') + '\n', defs, 30, 'x')
-  expect(clip.length).toBe(5)
+  expect(clip.length).toBe(4)
   const j = defs.g1.joints[0].name
-  expect(clip.channels[j].keys.map(k => k.v)).toEqual([0, 0.5, 1, 0.75, 0.5])
-  expect(clip.channels['root.x'].keys.map(k => k.v)).toEqual([0, 0, 0, 1, 2])
+  expect(clip.channels[j].keys.map(k => k.v)).toEqual([0, 0.6, 0.9, 0.6].map(v => expect.closeTo(v, 9)))
+  expect(clip.channels['root.x'].keys.map(k => k.v)).toEqual([0, 0, 0.4, 1.6].map(v => expect.closeTo(v, 9)))
 })
 
 test('yaw beyond π stays continuous after import', () => {
@@ -55,29 +55,29 @@ test('yaw beyond π stays continuous after import', () => {
     const h = y / 2
     return [0, 0, 0, 0, 0, Math.sin(h), Math.cos(h), ...new Array(29).fill(0)].join(',')
   })
-  const ks = csvToClip(rows.join('\n'), defs, 60, 'x').channels['root.yaw'].keys.map(k => k.v)
+  const ks = csvToClip(rows.join('\n'), defs, 50, 'x').channels['root.yaw'].keys.map(k => k.v)
   ks.forEach((v, i) => { if (i) expect(v).toBeGreaterThan(ks[i - 1]) })
   expect(ks[3]).toBeCloseTo(3.3, 6)
 })
 
 test('bad column count and non-numeric rejected', () => {
-  expect(() => csvToClip('1,2,3\n', defs, 60, 'x')).toThrow('열 수가')
-  expect(() => csvToClip(row(36).replace('0', 'abc'), defs, 60, 'x')).toThrow('1행에 숫자가 아닌')
+  expect(() => csvToClip('1,2,3\n', defs, 50, 'x')).toThrow('열 수가')
+  expect(() => csvToClip(row(36).replace('0', 'abc'), defs, 50, 'x')).toThrow('1행에 숫자가 아닌')
 })
 
 test('GO2 detected by 19 columns; blank lines ignored', () => {
-  const clip = csvToClip(`\n${row(19)}\n\n${row(19)}\n`, defs, 60, 'g')
+  const clip = csvToClip(`\n${row(19)}\n\n${row(19)}\n`, defs, 50, 'g')
   expect(clip.robot).toBe('go2')
   expect(clip.length).toBe(2)
   expect(clip.name).toBe('g')
 })
 
 test('rejects hex/Infinity/overflow; column error names the row', () => {
-  for (const v of ['0x10', 'Infinity', '1e999']) expect(() => csvToClip(row(36).replace('0', v), defs, 60, 'x')).toThrow('숫자가 아닌')
+  for (const v of ['0x10', 'Infinity', '1e999']) expect(() => csvToClip(row(36).replace('0', v), defs, 50, 'x')).toThrow('숫자가 아닌')
   expect(() => csvToClip(`${row(36)}
 
 ${row(19)}
-`, defs, 60, 'x')).toThrow('19 (3행)')
+`, defs, 50, 'x')).toThrow('19 (3행)')
 })
 
 // ---- headed (new) format ----
@@ -98,7 +98,7 @@ test('headed: g1/go2 detected from DOF, time ignored, fps from the file', () => 
   const o = csvToClip(headed(4, defs.go2), defs, undefined, 'x')
   expect(o.robot).toBe('go2')
   expect(o.channels.FL_hip_joint.keys).toHaveLength(4)
-  const t = csvToClip(edit(headed(3), r => { r[2][3] = '99999' }), defs, 60, 'x') // time(ms) ignored
+  const t = csvToClip(edit(headed(3), r => { r[2][3] = '99999' }), defs, 50, 'x') // time(ms) ignored
   expect(t.length).toBe(3)
 })
 
@@ -106,26 +106,26 @@ test('headed: columns mapped by name, any order', () => {
   const csv = headed(3)
   const order = [0, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 40, ...Array.from({ length: 29 }, (_, i) => 39 - i)]
   const shuffled = csv.trimEnd().split('\n').map(l => { const c = l.split(','); return order.map(i => c[i]).join(',') }).join('\n')
-  const a = csvToClip(csv, defs, 60, 'x'), b = csvToClip(shuffled, defs, 60, 'x')
+  const a = csvToClip(csv, defs, 50, 'x'), b = csvToClip(shuffled, defs, 50, 'x')
   expect(Object.keys(b.channels).sort()).toEqual(Object.keys(a.channels).sort())
   for (const k of Object.keys(a.channels)) expect(b.channels[k].keys.map(v => v.v)).toEqual(a.channels[k].keys.map(v => v.v))
 })
 
-test('headed 30fps resampled to 60fps (2N-1 frames)', () => {
+test('headed 30fps resampled to 50fps', () => {
   const csv = edit(headed(3), r => r.slice(1).forEach(x => { x[0] = '30' }))
-  const clip = csvToClip(csv, defs, 60, 'x')
-  expect(clip.length).toBe(5)
-  expect(clip.channels['root.x'].keys.map(k => k.v)).toEqual([0, 0.005, 0.01, 0.015, 0.02])
+  const clip = csvToClip(csv, defs, 50, 'x')
+  expect(clip.length).toBe(4)
+  expect(clip.channels['root.x'].keys.map(k => k.v)).toEqual([0, 0.006, 0.012, 0.018].map(v => expect.closeTo(v, 9)))
 })
 
 test('headed: errors are Korean and name the row', () => {
-  expect(() => csvToClip(edit(headed(3), r => { r[3][0] = '30' }), defs, 60, 'x')).toThrow('fps 값이 행마다 다릅니다')
-  expect(() => csvToClip(edit(headed(3), r => r.slice(1).forEach(x => { x[0] = '24' })), defs, 60, 'x')).toThrow('지원하지 않는 fps입니다: 24')
-  expect(() => csvToClip(edit(headed(3), r => r.slice(1).forEach(x => { x[2] = '7' })), defs, 60, 'x')).toThrow('DOF Number')
-  expect(() => csvToClip(edit(headed(3), r => { r[0][12] = 'bogus' }), defs, 60, 'x')).toThrow(`헤더에 관절 열이 없습니다: ${defs.g1.joints[1].name}`)
-  expect(() => csvToClip(edit(headed(3), r => { r[2][5] = 'abc' }), defs, 60, 'x')).toThrow('3행에 숫자가 아닌')
-  expect(() => csvToClip(edit(headed(3), r => { r[2].length = 20 }), defs, 60, 'x')).toThrow('3행')
-  expect(() => csvToClip(headed(0), defs, 60, 'x')).toThrow('데이터가 없습니다')
+  expect(() => csvToClip(edit(headed(3), r => { r[3][0] = '30' }), defs, 50, 'x')).toThrow('fps 값이 행마다 다릅니다')
+  expect(() => csvToClip(edit(headed(3), r => r.slice(1).forEach(x => { x[0] = '24' })), defs, 50, 'x')).toThrow('지원하지 않는 fps입니다: 24')
+  expect(() => csvToClip(edit(headed(3), r => r.slice(1).forEach(x => { x[2] = '7' })), defs, 50, 'x')).toThrow('DOF Number')
+  expect(() => csvToClip(edit(headed(3), r => { r[0][12] = 'bogus' }), defs, 50, 'x')).toThrow(`헤더에 관절 열이 없습니다: ${defs.g1.joints[1].name}`)
+  expect(() => csvToClip(edit(headed(3), r => { r[2][5] = 'abc' }), defs, 50, 'x')).toThrow('3행에 숫자가 아닌')
+  expect(() => csvToClip(edit(headed(3), r => { r[2].length = 20 }), defs, 50, 'x')).toThrow('3행')
+  expect(() => csvToClip(headed(0), defs, 50, 'x')).toThrow('데이터가 없습니다')
 })
 
 test('headed: frequency(fps) column may be anywhere, not only first', () => {
@@ -139,18 +139,18 @@ test('headed: frequency(fps) column may be anywhere, not only first', () => {
 test('headed: robot from DOF even when RobotType disagrees (real-robot logs write 0 for GO2)', () => {
   const go2 = csvToClip(withFps(edit(headed(4, defs.go2), r => r.slice(1).forEach(x => { x[1] = '0' })), 50), defs, undefined, 'x')
   expect(go2.robot).toBe('go2')
-  expect(csvToClip(edit(headed(3), r => r.slice(1).forEach(x => { x[1] = '1' })), defs, 60, 'x').robot).toBe('g1')
+  expect(csvToClip(edit(headed(3), r => r.slice(1).forEach(x => { x[1] = '1' })), defs, 50, 'x').robot).toBe('g1')
 })
 
 test('headed: duplicate header name and per-row RobotType/DOF mismatch rejected', () => {
-  expect(() => csvToClip(edit(headed(3), r => { r[0][12] = r[0][11] }), defs, 60, 'x')).toThrow(`헤더에 같은 열 이름이 두 번 있습니다: ${defs.g1.joints[0].name}`)
-  expect(() => csvToClip(edit(headed(3), r => { r[3][1] = '1' }), defs, 60, 'x')).toThrow('RobotType/DOF 값이 행마다 다릅니다 (4행)')
-  expect(() => csvToClip(edit(headed(3), r => { r[3][2] = '12' }), defs, 60, 'x')).toThrow('RobotType/DOF 값이 행마다 다릅니다 (4행)')
+  expect(() => csvToClip(edit(headed(3), r => { r[0][12] = r[0][11] }), defs, 50, 'x')).toThrow(`헤더에 같은 열 이름이 두 번 있습니다: ${defs.g1.joints[0].name}`)
+  expect(() => csvToClip(edit(headed(3), r => { r[3][1] = '1' }), defs, 50, 'x')).toThrow('RobotType/DOF 값이 행마다 다릅니다 (4행)')
+  expect(() => csvToClip(edit(headed(3), r => { r[3][2] = '12' }), defs, 50, 'x')).toThrow('RobotType/DOF 값이 행마다 다릅니다 (4행)')
 })
 
 test('headed: header detection is case-insensitive and CRLF safe', () => {
   const csv = headed(2).replace('frequency(fps)', ' Frequency(FPS) ').replace(/\n/g, '\r\n')
-  expect(csvToClip(csv, defs, 60, 'x').length).toBe(2)
+  expect(csvToClip(csv, defs, 50, 'x').length).toBe(2)
 })
 
 test('roundtrip headed: export → import → export is identical, 30fps path untouched by headed 60', () => {
@@ -162,7 +162,7 @@ test('roundtrip headed: export → import → export is identical, 30fps path un
 })
 
 const SAMPLE = new URL('../../assets/data/Track1_원본_합본.csv', import.meta.url)
-test.skipIf(!existsSync(SAMPLE))('real sample: header and first 300 rows import as G1 60fps', async () => {
+test.skipIf(!existsSync(SAMPLE))('real sample: header and first 300 rows import as G1 50fps', async () => {
   const { openSync, readSync, closeSync } = await import('node:fs')
   const fd = openSync(SAMPLE, 'r'), buf = Buffer.alloc(300 * 800)
   const n = readSync(fd, buf, 0, buf.length, 0); closeSync(fd)
@@ -182,13 +182,13 @@ test('isHeadedCsv: header detection for skipping the fps dialog', () => {
 
 const withFps = (csv: string, fps: number) => edit(csv, r => r.slice(1).forEach(c => { c[0] = String(fps) }))
 
-test('headed 50fps → resampled to 60fps', () => {
-  const clip = csvToClip(withFps(headed(6, defs.go2), 50), defs, undefined, 'r50') // root.x = i * 0.01 per source row
-  expect(clip.length).toBe(Math.floor(5 * 60 / 50) + 1)
+test('headed 60fps → resampled to 50fps', () => {
+  const clip = csvToClip(withFps(headed(7, defs.go2), 60), defs, undefined, 'r60') // root.x = i * 0.01 per source row
+  expect(clip.length).toBe(Math.floor(6 * 50 / 60) + 1)
   const x = clip.channels['root.x'].keys
   expect(x[0].v).toBeCloseTo(0)
-  expect(x.at(-1)!.v).toBeCloseTo(0.05)
-  expect(x[3].v).toBeCloseTo(3 * 50 / 60 * 0.01)
+  expect(x.at(-1)!.v).toBeCloseTo(0.06)
+  expect(x[3].v).toBeCloseTo(3 * 60 / 50 * 0.01)
 })
 
 test('headed 25fps still rejected', () => {
@@ -200,4 +200,30 @@ test('parseCsvPoses keeps source fps and frames', () => {
   expect(r).toMatchObject({ robot: 'go2', fps: 50 })
   expect(r.poses).toHaveLength(6)
   expect(r.poses[2].rootPos[0]).toBeCloseTo(0.02)
+})
+
+const motionJson = (over: Record<string, unknown> = {}) => JSON.stringify({
+  format: 'go2_motion_clip_v2', robot: 'go2', nominal_rate: 50,
+  joint_order: ['FR_hip', 'FR_thigh', 'FR_calf', 'FL_hip', 'FL_thigh', 'FL_calf', 'RR_hip', 'RR_thigh', 'RR_calf', 'RL_hip', 'RL_thigh', 'RL_calf'],
+  q: [0, 1, 2].map(i => Array.from({ length: 12 }, (_, j) => i + j / 100)),
+  root_local: [0, 1, 2].map(i => [i * 0.1, 0, 0.3]), base_quaternion_xyzw: [0, 1, 2].map(() => [0, 0, 0, 1]), ...over,
+})
+
+test('go2_motion_clip_v2 JSON: joints mapped by name, 50fps passthrough, no fps dialog', () => {
+  expect(isHeadedCsv(motionJson())).toBe(true)
+  const clip = csvToClip(motionJson(), defs, undefined, 'm')
+  expect(clip).toMatchObject({ robot: 'go2', length: 3 })
+  // FR_hip is column 0 of joint_order, FL_hip column 3
+  expect(clip.channels.FR_hip_joint.keys.map(k => k.v)).toEqual([0, 1, 2])
+  expect(clip.channels.FL_hip_joint.keys.map(k => k.v)).toEqual([0.03, 1.03, 2.03])
+  expect(clip.channels['root.x'].keys.map(k => k.v)).toEqual([0, 0.1, 0.2].map(v => expect.closeTo(v, 9)))
+})
+
+test('go2_motion_clip_v2 JSON: rejects other format, robot, fps and bad frames', () => {
+  expect(() => csvToClip(motionJson({ format: 'x' }), defs, undefined, 'm')).toThrow('지원하지 않는 JSON 형식')
+  expect(() => csvToClip(motionJson({ robot: 'g1' }), defs, undefined, 'm')).toThrow('지원하지 않는 로봇')
+  expect(() => csvToClip(motionJson({ nominal_rate: 24 }), defs, undefined, 'm')).toThrow('지원하지 않는 fps')
+  expect(() => csvToClip(motionJson({ root_local: [[0, 0, 0]] }), defs, undefined, 'm')).toThrow('프레임 데이터')
+  expect(() => csvToClip(motionJson({ q: [[0], [0], [0]] }), defs, undefined, 'm')).toThrow('숫자가 아닌')
+  expect(() => csvToClip('{bad', defs, undefined, 'm')).toThrow('JSON을 읽을 수 없습니다')
 })

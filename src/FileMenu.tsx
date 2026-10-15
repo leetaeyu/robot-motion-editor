@@ -4,7 +4,7 @@ import { newProjectFile, openProject, saveProject } from './projectActions'
 
 type Item = { label: string; hint?: string; run: () => void }
 
-export default function FileMenu({ onExport }: { onExport: () => void }) {
+export default function FileMenu({ onExport, onBlocks }: { onExport: () => void; onBlocks: () => void }) {
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null) // null = closed
   const trig = useRef<HTMLButtonElement>(null)
   const menu = useRef<HTMLDivElement>(null)
@@ -12,7 +12,7 @@ export default function FileMenu({ onExport }: { onExport: () => void }) {
   const groups: Item[][] = [
     [{ label: '새 프로젝트', run: newProjectFile }, { label: '열기', hint: 'Ctrl+O', run: openProject },
       { label: '저장', hint: 'Ctrl+S', run: () => saveProject() }, { label: '다른 이름으로 저장', hint: 'Ctrl+Shift+S', run: () => saveProject(true) }],
-    [{ label: 'CSV 가져오기', run: importCsvFiles }, { label: '영상 가져오기', run: importVideoFiles }],
+    [{ label: 'CSV 가져오기', run: importCsvFiles }, { label: '영상 가져오기', run: importVideoFiles }, { label: 'GO2 블럭 추가…', run: onBlocks }],
     [{ label: '내보내기', run: onExport }],
   ]
   const items = () => [...(menu.current?.querySelectorAll<HTMLElement>('[role=menuitem]') ?? [])]

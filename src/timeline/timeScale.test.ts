@@ -17,9 +17,9 @@ test('frame<->x roundtrip', () => {
 
 test('timecode', () => {
   expect(formatTimecode(0)).toBe('00:00.00')
-  expect(formatTimecode(61)).toBe('00:01.01')
-  expect(formatTimecode(3600)).toBe('01:00.00')
-  expect(formatTimecode(-61)).toBe('-00:01.01')
+  expect(formatTimecode(51)).toBe('00:01.01')
+  expect(formatTimecode(3000)).toBe('01:00.00')
+  expect(formatTimecode(-51)).toBe('-00:01.01')
 })
 
 test('rows: g1 = actor + root + 5 groups collapsed', () => {

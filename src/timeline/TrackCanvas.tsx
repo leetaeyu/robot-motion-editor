@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { onHandleArrow } from '../layout/useLayout'
-import { clampDf, clipLocked, editingItem, editTarget, getEditor, type KeyRef } from '../store/store'
+import { clampDf, clipLocked, editingItem, editTarget, getEditor, keyOwner, keyTarget, type KeyRef } from '../store/store'
 import type { Interp, Sequence } from '../model/types'
 import { tv } from './viewState'
 import { buildRows, frameToX, hitKey, hoverFrame, hoverScrub, keysIn, rowKey, xToFrame, type TimeScale } from './timeScale'
@@ -31,14 +31,16 @@ export default function TrackCanvas() {
     const canvas = cv.current!, ed = getEditor(), u = ui.current
     const css = getComputedStyle(document.documentElement)
     const col = (n: string) => css.getPropertyValue(n).trim()
-    const C = { bg: col('--bg'), panel: col('--panel'), line: col('--line'), text: col('--text'), accent: col('--accent') }
+    const C = { bg: col('--bg'), panel: col('--panel'), line: col('--line'), text: col('--text'), accent: col('--accent'), piece: col('--piece') }
     let W = 0, H = 0, raf = 0
 
     const scale = (): TimeScale => ({ x0: LABEL_W - tv.scrollF * tv.ppf, pxPerFrame: tv.ppf })
+    // the open item, its clip and the curves keys are edited on: the clip, or (이 조각 수정) the item's 수정 층 (owner = item id)
     const itemOf = (actorId: string) => {
-      const s = ed.getState(), t = editTarget(s, actorId)
+      const s = ed.getState(), t = keyTarget(s, actorId)
       const item = t && s.project.sequence.tracks.flatMap(tr => tr.items).find(i => i.id === t.itemId)
-      return item ? { item, clip: s.project.clips[item.refId] } : null
+      const own = t && keyOwner(s.project, t.owner)
+      return item && own ? { item, clip: s.project.clips[item.refId], owner: t.owner, keys: own, piece: t.owner === item.id } : null
     }
     // clip view: the time axis is clip frames, so the clip scale is the view scale
     const clipScale = (actorId: string): TimeScale | null => itemOf(actorId) ? scale() : null
@@ -74,13 +76,23 @@ export default function TrackCanvas() {
           // only keys in the visible frame range (widened by a key-drag preview offset)
           const pad = Math.abs(u.dragDf) + 1, lo = xToFrame(cs, LABEL_W - KEY) - pad, hi = xToFrame(cs, W + KEY) + pad
           const frames = new Set<number>()
-          for (const ch of r.channels) for (const k of keysIn(it.clip.channels[ch]?.keys ?? [], lo, hi)) frames.add(k.f)
+          for (const ch of r.channels) for (const k of keysIn(it.keys.channels[ch]?.keys ?? [], lo, hi)) frames.add(k.f)
+          if (it.piece) { // 이 조각 수정: the clip's own keys stay visible, dimmed, under the 수정 층 keys
+            const base = new Set<number>()
+            for (const ch of r.channels) for (const k of keysIn(it.clip.channels[ch]?.keys ?? [], lo, hi)) if (!frames.has(k.f)) base.add(k.f)
+            ctx.fillStyle = C.text; ctx.globalAlpha = 0.22
+            for (const f of base) {
+              const x = frameToX(cs, f), cy = y + ROW_H / 2, h = KEY / 2 - 0.5
+              ctx.beginPath(); ctx.moveTo(x, cy - h); ctx.lineTo(x + h, cy); ctx.lineTo(x, cy + h); ctx.lineTo(x - h, cy); ctx.fill()
+            }
+            ctx.globalAlpha = 1
+          }
           for (const f of frames) {
             const isSel = s.sel.actorId === r.actorId &&
               r.channels.some(ch => s.sel.keys.some(k => sameKey(k, { channel: ch, f })))
             const x = frameToX(cs, f + (isSel ? u.dragDf : 0)), cy = y + ROW_H / 2, h = KEY / 2 + 0.5
             if (x < LABEL_W - KEY || x > W + KEY) continue
-            ctx.fillStyle = isSel ? C.accent : C.text
+            ctx.fillStyle = isSel ? C.accent : it.piece ? C.piece : C.text
             ctx.beginPath()
             ctx.moveTo(x, cy - h); ctx.lineTo(x + h, cy); ctx.lineTo(x, cy + h); ctx.lineTo(x - h, cy); ctx.fill()
           }
@@ -141,8 +153,8 @@ export default function TrackCanvas() {
       if (!r || y < RULER_H || x < LABEL_W) return null
       const cs = clipScale(r.actorId), it = itemOf(r.actorId)
       if (!cs || !it) return null
-      const hit = hitKey([r], it.clip, cs, ROW_H, x, ROW_H / 2)
-      return hit && { actorId: r.actorId, clipId: it.clip.id, hit, channel: r.kind === 'channel' ? r.channels[0] : null }
+      const hit = hitKey([r], it.keys, cs, ROW_H, x, ROW_H / 2)
+      return hit && { actorId: r.actorId, clipId: it.owner, hit, channel: r.kind === 'channel' ? r.channels[0] : null }
     }
     const selected = (hit: KeyRef[]) => hit.every(h => ed.getState().sel.keys.some(q => sameKey(q, h)))
 
@@ -173,7 +185,7 @@ export default function TrackCanvas() {
           else s.selectKeys(k.hit, true)
         } else if (!selected(k.hit)) s.selectKeys(k.hit, false)
         if (clipLocked(ed.getState().project, k.clipId)) return // selection works; moving is blocked (Timeline shows the message)
-        const clipLen = ed.getState().project.clips[k.clipId].length
+        const clipLen = keyOwner(ed.getState().project, k.clipId)!.length
         drag(m => { u.dragDf = clampDf(clipLen, ed.getState().sel.keys, (pos(m).x - x) / tv.ppf); schedule() }, m => {
           const df = Math.round((pos(m).x - x) / tv.ppf), st = ed.getState()
           u.dragDf = 0
@@ -203,7 +215,7 @@ export default function TrackCanvas() {
         for (let i = Math.max(r0, 0); i <= r1 && i < rs.length; i++) {
           const r = rs[i], cs = clipScale(r.actorId), it = itemOf(r.actorId)
           if (!cs || !it || (actorId && r.actorId !== actorId)) continue
-          for (const ch of r.channels) for (const key of it.clip.channels[ch]?.keys ?? []) {
+          for (const ch of r.channels) for (const key of it.keys.channels[ch]?.keys ?? []) {
             const kx = frameToX(cs, key.f)
             if (kx >= bx0 && kx <= bx1 && kx >= LABEL_W) { actorId = r.actorId; found.push({ channel: ch, f: key.f }) }
           }
@@ -252,15 +264,15 @@ export default function TrackCanvas() {
       if (t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return
       const s = ed.getState()
       if (s.view !== 'tracks' || !s.sel.actorId || e.altKey) return
-      const target = editTarget(s, s.sel.actorId)
+      const target = keyTarget(s, s.sel.actorId)
       if (!target) return
-      const { clipId, f } = target
+      const { owner: clipId, f } = target
       const keys = s.sel.keys, mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase()
       const frozen = clipLocked(s.project, clipId)
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (keys.length && !frozen) { e.preventDefault(); s.deleteKeys(clipId, keys) }
       } else if (mod && k === 'c') {
-        const clip = s.project.clips[clipId]
+        const clip = keyOwner(s.project, clipId)!
         const items = keys.flatMap(r => {
           const key = clip.channels[r.channel]?.keys.find(q => q.f === r.f)
           return key ? [{ channel: r.channel, f: key.f, v: key.v, interp: key.interp }] : []
@@ -308,8 +320,8 @@ export default function TrackCanvas() {
 
   const apply = (interp: Interp) => {
     const s = getEditor().getState()
-    const t = s.sel.actorId && s.sel.keys.length ? editTarget(s, s.sel.actorId) : null
-    if (t) s.setInterp(t.clipId, s.sel.keys, interp)
+    const t = s.sel.actorId && s.sel.keys.length ? keyTarget(s, s.sel.actorId) : null
+    if (t) s.setInterp(t.owner, s.sel.keys, interp)
     setMenu(null)
   }
   return (

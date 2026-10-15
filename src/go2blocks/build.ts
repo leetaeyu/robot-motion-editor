@@ -51,7 +51,7 @@ export function blockActual(block: Block, poses: Pose[], value: number): { n: nu
   return { n, actual }
 }
 
-/** Source poses (at `fps`) -> 60fps GO2 clip starting at the origin. Loop blocks: head + loop × n + tail. */
+/** Source poses (at `fps`) -> 50fps GO2 clip starting at the origin. Loop blocks: head + loop × n + tail. */
 export function buildBlockClip(block: Block, poses: Pose[], fps: number, value: number, defs: RobotDefs): Clip {
   let out: Pose[] = poses, name = block.label
   if (block.kind === 'loop') {

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { onHandleArrow } from '../layout/useLayout'
-import { clampDf, clipLocked, editingItem, editTarget, getEditor, type KeyRef } from '../store/store'
+import { clampDf, clipLocked, editingItem, editTarget, getEditor, keyOwner, keyTarget, type KeyRef } from '../store/store'
+import { itemClip } from '../model/itemClip'
 import type { Curve, Key, Sequence } from '../model/types'
 import { evalCurve } from '../model/curve'
 import { fitView, handlePoints, valueToY, velocityViolations, yToValue, type ValueScale } from './graph'
@@ -24,7 +25,7 @@ export default function GraphCanvas() {
     const canvas = cv.current!, ed = getEditor()
     const css = getComputedStyle(document.documentElement)
     const col = (n: string) => css.getPropertyValue(n).trim()
-    const C = { bg: col('--bg'), panel: col('--panel'), line: col('--line'), text: col('--text'), accent: col('--accent') }
+    const C = { bg: col('--bg'), panel: col('--panel'), line: col('--line'), text: col('--text'), accent: col('--accent'), piece: col('--piece') }
     let W = 0, H = 0, raf = 0, fitted = false
     let vs: ValueScale = { y0: 200, pxPerUnit: 100 }
     let drag: Drag | null = null
@@ -34,13 +35,18 @@ export default function GraphCanvas() {
       const s = ed.getState()
       if (!s.sel.actorId) return null
       const actor = s.project.actors.find(a => a.id === s.sel.actorId)
-      const tg = editTarget(s, s.sel.actorId)
+      const tg = keyTarget(s, s.sel.actorId)
       const item = tg && s.project.sequence.tracks.flatMap(t => t.items).find(i => i.id === tg.itemId)
-      if (!actor || !item) return null
+      const own = tg && keyOwner(s.project, tg.owner)
+      if (!actor || !item || !own) return null
       const clip = s.project.clips[item.refId], def = s.defs[actor.robot]
-      const cs = scale()
-      return { s, clip, def, cs, clipId: item.refId }
+      const cs = scale(), piece = tg.owner === item.id
+      // src: the curves keys are edited on (clip, or the 수정 층 deltas); shown: what the piece plays (clip + 수정 층)
+      return { s, clip, def, cs, clipId: tg.owner, piece, src: own, shown: itemClip(s.project, s.defs, item) ?? clip }
     }
+    // 이 조각 수정: a delta key sits on the result curve, i.e. at the clip's value plus the delta
+    const shift = (c: { piece: boolean; clip: { channels: Record<string, Curve> }; def: { standingHeight: number } }, ch: string, f: number) =>
+      c.piece ? evalCurve(c.clip.channels[ch] ?? { keys: [] }, f, ch === 'root.z' ? c.def.standingHeight : 0) : 0
     // union of sel.channel and the channels of sel.keys; 'root' / 'group:<name>' expand to their channels; max 8
     const shown = (): string[] => {
       const { sel, project, defs } = ed.getState(), out: string[] = []
@@ -78,7 +84,7 @@ export default function GraphCanvas() {
       if (!c || !chs.length || H <= RULER_H) return
       const [from, to] = visibleClipRange(c.clip, c.cs)
       const limits = chs.flatMap(ch => c.def.joints.filter(j => j.name === ch))
-      const v = fitView(chs.map(ch => c.clip.channels[ch] ?? { keys: [] }), limits, from, Math.max(from + 1, to), H - RULER_H)
+      const v = fitView(chs.map(ch => c.shown.channels[ch] ?? { keys: [] }), limits, from, Math.max(from + 1, to), H - RULER_H)
       vs = { y0: v.y0 + RULER_H, pxPerUnit: v.pxPerUnit }
       fitted = true
     }
@@ -96,7 +102,7 @@ export default function GraphCanvas() {
         ctx.fillStyle = C.text; ctx.fillText('트랙 보기에서 채널을 고르세요.', 12, RULER_H + 16)
       } else {
         if (!fitted) fit()
-        const { s, clip, def, cs } = c
+        const { s, clip, def, cs, piece, src } = c
         const [from, to] = visibleClipRange(clip, cs)
         ctx.save(); ctx.beginPath(); ctx.rect(LABEL_W, RULER_H, W - LABEL_W, H - RULER_H); ctx.clip()
         // value grid
@@ -112,8 +118,11 @@ export default function GraphCanvas() {
         }
         ctx.textAlign = 'left'
         chs.forEach((ch, i) => {
-          const color = PALETTE[i], curve = curveOf(clip, def.joints, ch), joint = def.joints.find(j => j.name === ch)
-          if (!curve.keys.length) { // fallback value line, dimmed
+          const color = PALETTE[i], curve = curveOf(src, piece ? [] : def.joints, ch), joint = def.joints.find(j => j.name === ch)
+          const fb = ch === 'root.z' ? def.standingHeight : 0, baseC = clip.channels[ch] ?? { keys: [] }
+          // the line: the edited curve, or (수정 층) clip + deltas sampled per frame over the visible range
+          const line: Curve = !piece ? curve : { keys: Array.from({ length: Math.max(0, to - from + 1) }, (_, k) => ({ f: from + k, v: evalCurve(baseC, from + k, fb) + evalCurve(curve, from + k, 0), interp: 'linear' as const, inTan: { df: 0, dv: 0 }, outTan: { df: 0, dv: 0 } })) }
+          if (!piece && !curve.keys.length) { // fallback value line, dimmed
             const y = valueToY(vs, ch === 'root.z' ? def.standingHeight : 0)
             ctx.globalAlpha = 0.35; ctx.strokeStyle = color; ctx.lineWidth = 1
             ctx.beginPath(); ctx.moveTo(LABEL_W, y); ctx.lineTo(W, y); ctx.stroke(); ctx.globalAlpha = 1
@@ -128,22 +137,29 @@ export default function GraphCanvas() {
             ctx.setLineDash([]); ctx.globalAlpha = 1
           }
           const stepF = Math.max(1, Math.ceil(1 / tv.ppf))
+          let polyC: Curve = baseC // what poly() draws
           const poly = (a: number, b: number) => {
             ctx.beginPath()
             for (let f = a; f < b; f += stepF) {
-              const x = frameToX(cs, f), y = valueToY(vs, evalCurve(curve, f, 0))
+              const x = frameToX(cs, f), y = valueToY(vs, evalCurve(polyC, f, 0))
               if (f === a) ctx.moveTo(x, y); else ctx.lineTo(x, y)
             }
-            ctx.lineTo(frameToX(cs, b), valueToY(vs, evalCurve(curve, b, 0)))
+            ctx.lineTo(frameToX(cs, b), valueToY(vs, evalCurve(polyC, b, 0)))
             ctx.stroke()
           }
+          if (piece) { // the clip, dimmed
+            polyC = { keys: line.keys.map(k => ({ ...k, v: evalCurve(baseC, k.f, fb) })) }
+            ctx.strokeStyle = color; ctx.globalAlpha = 0.3; ctx.lineWidth = 1; poly(from, to); ctx.globalAlpha = 1
+          }
+          polyC = line
           ctx.strokeStyle = color; ctx.lineWidth = 1.5; poly(from, to)
           if (joint) {
             ctx.strokeStyle = RED; ctx.lineWidth = 3
-            for (const r of velocityViolations(curve, joint.velocity, from, to)) poly(r.from, r.to)
+            for (const r of velocityViolations(line, joint.velocity, from, to)) poly(r.from, r.to)
           }
           // keys + handles of selected keys
-          for (const k of curve.keys) {
+          for (const k0 of curve.keys) {
+            const k = piece ? { ...k0, v: k0.v + shift(c, ch, k0.f) } : k0
             const x = frameToX(cs, k.f), y = valueToY(vs, k.v)
             if (x < LABEL_W - KEY || x > W + KEY) continue
             const dg = drag
@@ -157,6 +173,7 @@ export default function GraphCanvas() {
               }
             }
             ctx.fillStyle = isSel ? C.accent : color
+            if (piece && !isSel) { ctx.strokeStyle = C.piece; ctx.lineWidth = 1.5; ctx.strokeRect(x - KEY / 2 - 1.5, y - KEY / 2 - 1.5, KEY + 3, KEY + 3) } // 수정 층 key
             ctx.fillRect(x - KEY / 2, y - KEY / 2, KEY, KEY)
           }
         })
@@ -209,13 +226,14 @@ export default function GraphCanvas() {
       const { x, y } = pos(e), c = ctxOf(), st = ed.getState()
       if (y < RULER_H) { st.setFrame(seqFrame(x)); track(m => st.setFrame(seqFrame(pos(m).x)), () => {}); return }
       if (!c || x < LABEL_W) return
-      const { clip, def, cs, clipId } = c, chs = shown(), frozen = clipLocked(st.project, clipId) // locked: select only (Timeline shows the message)
+      const { def, cs, clipId, piece, src } = c, chs = shown(), frozen = clipLocked(st.project, clipId), clip = { ...src } // locked: select only (Timeline shows the message)
       const near = (px: number, py: number) => Math.abs(px - x) <= 6 && Math.abs(py - y) <= 6
 
       // handle of a selected bezier key
       for (const ref of st.sel.keys) {
-        const k: Key | undefined = clip.channels[ref.channel]?.keys.find(q => q.f === ref.f)
-        if (frozen || !k || k.interp !== 'bezier' || !chs.includes(ref.channel)) continue
+        const k0: Key | undefined = clip.channels[ref.channel]?.keys.find(q => q.f === ref.f)
+        if (frozen || !k0 || k0.interp !== 'bezier' || !chs.includes(ref.channel)) continue
+        const k = { ...k0, v: k0.v + shift(c, ref.channel, k0.f) }
         const h = handlePoints(k, cs, vs)
         const side = near(h.out[0], h.out[1]) ? 'out' : near(h.in[0], h.in[1]) ? 'in' : null
         if (!side) continue
@@ -228,8 +246,8 @@ export default function GraphCanvas() {
       }
       // key
       let hit: { ref: KeyRef; d: number } | null = null
-      for (const ch of chs) for (const k of curveOf(clip, def.joints, ch).keys) {
-        const dx = Math.abs(frameToX(cs, k.f) - x), dy = Math.abs(valueToY(vs, k.v) - y)
+      for (const ch of chs) for (const k of curveOf(clip, piece ? [] : def.joints, ch).keys) {
+        const dx = Math.abs(frameToX(cs, k.f) - x), dy = Math.abs(valueToY(vs, k.v + shift(c, ch, k.f)) - y)
         if (dx <= KEY && dy <= KEY && (!hit || dx + dy < hit.d)) hit = { ref: { channel: ch, f: k.f }, d: dx + dy }
       }
       if (!hit) { st.setFrame(seqFrame(x)); return }

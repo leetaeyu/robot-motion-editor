@@ -14,7 +14,7 @@ test('drop: card onto a track appends after the overlapped item; empty area make
   const head = ['frequency(fps)', 'RobotType', 'DOF Number', 'time(ms)', 'position X(m)', 'position Y(m)', 'position Z(m)',
     'quaternion X', 'quaternion Y', 'quaternion Z', 'quaternion W', ...joints].join(',') + ','
   const csv = (n: number) => Buffer.from([head, ...Array.from({ length: n }, (_, i) =>
-    [60, 0, 29, Math.round(i * 1000 / 60), (0.01 * i).toFixed(6), '0.000000', '0.790000', '0', '0', '0', '1',
+    [50, 0, 29, Math.round(i * 1000 / 50), (0.01 * i).toFixed(6), '0.000000', '0.790000', '0', '0', '0', '1',
       ...joints.map((_, j) => (0.02 * Math.sin(i / 9 + j)).toFixed(6))].join(',') + ',')].join('\n') + '\n')
   for (const [name, n] of [['a', 120], ['b', 60]] as const) {
     await page.getByRole('button', { name: '파일', exact: true }).click()

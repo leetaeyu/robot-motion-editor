@@ -1,6 +1,7 @@
 import { evaluateClip, type Pose, type RobotDefs } from './pose'
 import { applyXf, blendPose, itemLen, resolve, sortedItems, stitchTransforms } from './sequence'
 import type { Clip, Item, Project, Track } from './types'
+import { itemClip } from './itemClip'
 import type { RobotKind } from '../robot/types'
 
 export { evaluateClip, type Pose, type RobotDefs }
@@ -15,7 +16,7 @@ function trackPose(p: Project, defs: RobotDefs, track: Track, robot: RobotKind, 
   const def = defs[robot]
   const xfs = stitchTransforms(p, defs, track)
   const at = (it: Item, cf: number): Pose | null => {
-    const clip = p.clips[it.refId]
+    const clip = itemClip(p, defs, it)
     return clip ? applyXf(ev(clip, def, cf), xfs.get(it.id)!) : null
   }
   const items = sortedItems(track)
@@ -48,7 +49,7 @@ export function evaluateItem(p: Project, defs: RobotDefs, itemId: string, clipFr
   const track = p.sequence.tracks.find(t => t.items.some(i => i.id === itemId))
   const item = track?.items.find(i => i.id === itemId)
   const actor = p.actors.find(a => a.id === track?.actorId)
-  const clip = item && p.clips[item.refId]
+  const clip = item && itemClip(p, defs, item)
   if (!track || !item || !actor || !clip) throw new Error(`unknown item ${itemId}`)
   const cf = Math.min(Math.max(clipFrame, 0), clip.length - 1)
   const pose = applyXf(evaluateClip(clip, defs[actor.robot], cf), stitchTransforms(p, defs, track).get(itemId)!)

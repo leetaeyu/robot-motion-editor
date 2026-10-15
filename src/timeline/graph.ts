@@ -1,6 +1,7 @@
 import { evalCurve } from '../model/curve'
 import type { Curve, Key } from '../model/types'
 import { frameToX, type TimeScale } from './timeScale'
+import { FPS } from '../model/fps'
 
 export interface ValueScale { y0: number; pxPerUnit: number } // y0 = pixel y of value 0; value grows upward
 export const valueToY = (vs: ValueScale, v: number) => vs.y0 - v * vs.pxPerUnit
@@ -21,11 +22,11 @@ export function fitView(curves: Curve[], limits: { lower: number; upper: number 
   return { y0: (hi + pad) * ppu, pxPerUnit: ppu }
 }
 
-// Runs of frames where |v(f+1)-v(f)|*60 > velocity; { from, to } in frames.
+// Runs of frames where |v(f+1)-v(f)|*FPS > velocity; { from, to } in frames.
 export function velocityViolations(c: Curve, velocity: number, fromF: number, toF: number): { from: number; to: number }[] {
   const out: { from: number; to: number }[] = []
   for (let f = Math.floor(fromF); f < toF; f++) {
-    if (Math.abs(evalCurve(c, f + 1, 0) - evalCurve(c, f, 0)) * 60 <= velocity) continue
+    if (Math.abs(evalCurve(c, f + 1, 0) - evalCurve(c, f, 0)) * FPS <= velocity) continue
     const last = out[out.length - 1]
     if (last && last.to === f) last.to = f + 1
     else out.push({ from: f, to: f + 1 })

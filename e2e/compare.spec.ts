@@ -18,7 +18,7 @@ test('compare: second CSV is an asset only; 비교 opens a preview pane without 
   const head = ['frequency(fps)', 'RobotType', 'DOF Number', 'time(ms)', 'position X(m)', 'position Y(m)', 'position Z(m)',
     'quaternion X', 'quaternion Y', 'quaternion Z', 'quaternion W', ...joints].join(',') + ','
   const csv = (k: number) => Buffer.from([head, ...Array.from({ length: 60 }, (_, i) =>
-    [60, 0, 29, Math.round(i * 1000 / 60), (0.01 * i).toFixed(6), '0.000000', '0.790000', '0', '0', '0', '1',
+    [50, 0, 29, Math.round(i * 1000 / 50), (0.01 * i).toFixed(6), '0.000000', '0.790000', '0', '0', '0', '1',
       ...joints.map((_, j) => (0.02 * k * Math.sin(i / 9 + j)).toFixed(6))].join(',') + ',')].join('\n') + '\n')
 
   const [fc] = await Promise.all([page.waitForEvent('filechooser'), menu(page, 'CSV 가져오기')])

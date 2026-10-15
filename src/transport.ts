@@ -4,6 +4,7 @@ import { sortedItems } from './model/sequence'
 import type { Project } from './model/types'
 import { openProject, saveProject } from './projectActions'
 import { seqFlash } from './timeline/viewState'
+import { FPS } from './model/fps'
 
 export function sequenceEnd(p: Project): number {
   let end = 0
@@ -63,7 +64,7 @@ export function startTransport(): () => void {
       const now = performance.now()
       if (!was || hi <= lo || s.frame !== last || s.frame < lo || s.frame >= hi) { // start, scrubbed, or range moved away
         t0 = now; f0 = s.frame >= hi || s.frame < lo ? lo : s.frame }
-      let f = f0 + Math.floor((now - t0) * 60 / 1000) // from start time, so no drift accumulates
+      let f = f0 + Math.floor((now - t0) * FPS / 1000) // from start time, so no drift accumulates
       if (hi > lo && f >= hi) { t0 = now; f0 = lo; f = lo }
       if (f !== s.frame) s.setFrame(f)
       last = f

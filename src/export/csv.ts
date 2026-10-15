@@ -3,6 +3,7 @@ import { rebasePose } from '../model/pose'
 import type { Quat } from '../model/rootMath'
 import type { Item, Project } from '../model/types'
 import type { RobotDef, RobotKind } from '../robot/types'
+import { FPS } from '../model/fps'
 
 export type RootMode = 'local' | 'world'
 
@@ -39,7 +40,7 @@ const fmt = (v: number) => {
   return s === '-0.000000' ? '0.000000' : s
 }
 
-export const CSV_FPS = 60
+export const CSV_FPS = FPS
 export const ROBOT_TYPE: Record<RobotKind, number> = { g1: 0, go2: 1 }
 export const HEAD_FIXED = ['frequency(fps)', 'RobotType', 'DOF Number', 'time(ms)', 'position X(m)', 'position Y(m)', 'position Z(m)',
   'quaternion X', 'quaternion Y', 'quaternion Z', 'quaternion W']

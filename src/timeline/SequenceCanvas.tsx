@@ -70,7 +70,7 @@ export default function SequenceCanvas() {
     const canvas = cv.current!, ed = getEditor()
     const css = getComputedStyle(document.documentElement)
     const col = (n: string) => css.getPropertyValue(n).trim()
-    const C = { bg: col('--bg'), panel: col('--panel'), line: col('--line'), text: col('--text'), accent: col('--accent') }
+    const C = { bg: col('--bg'), panel: col('--panel'), line: col('--line'), text: col('--text'), accent: col('--accent'), piece: col('--piece') }
     let W = 0, H = 0, raf = 0, drag: Drag | null = null, ghost: { y: number; start: number; len: number; color: string } | null = null, timer = 0, scrollY = 0
 
     const scale = (): TimeScale => ({ x0: LABEL_W - tv.scrollF * tv.ppf, pxPerFrame: tv.ppf })
@@ -152,6 +152,11 @@ export default function SequenceCanvas() {
           const x = frameToX(sc, it.start), w = itemLen(it) * tv.ppf, by = y + 2, bh = ROW_H - 5
           if (video) { ctx.fillStyle = C.panel; ctx.fillRect(x, by, w, bh) }
           else { ctx.fillStyle = color; ctx.globalAlpha = 0.18 * ga; ctx.fillRect(x, by, w, bh); ctx.globalAlpha = ga }
+          if (it.offset) { // 수정 층 keys: short ticks along the bar's bottom edge (clip frames inside the trim)
+            ctx.fillStyle = C.piece; ctx.globalAlpha = ga
+            const fs = new Set(Object.values(it.offset).flatMap(c => c.keys.map(k => k.f)).filter(f => f >= it.trimIn && f < it.trimOut))
+            for (const f of fs) ctx.fillRect(Math.round(frameToX(sc, it.start + f - it.trimIn)) - 1, by + bh - 4, 2, 4)
+          }
           if (video && !mediaUrl(it.refId)) hatch(x, x + w, y, 0.25) // offline
           ctx.strokeStyle = it.id === s.selItem ? C.accent : video ? C.line : color; ctx.lineWidth = 1
           ctx.strokeRect(x + 0.5, by + 0.5, w - 1, bh - 1)

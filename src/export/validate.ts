@@ -1,6 +1,7 @@
 import type { Pose } from '../model/evaluate'
 import { quatAngle } from '../model/rootMath'
 import type { RobotDef } from '../robot/types'
+import { FPS } from '../model/fps'
 
 export interface Warning {
   kind: 'jointLimit' | 'jointVelocity' | 'rootJump' | 'gap'
@@ -9,7 +10,6 @@ export interface Warning {
   message: string
 }
 
-const FPS = 60
 const POS_JUMP = 0.05
 const ROT_JUMP = 0.1
 const f3 = (v: number) => v.toFixed(3)

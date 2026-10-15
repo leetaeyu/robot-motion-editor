@@ -5,6 +5,7 @@ import { blendPose } from '../model/sequence'
 import type { Clip } from '../model/types'
 import type { RobotKind } from '../robot/types'
 import { HEAD_FIXED } from './csv'
+import { FPS } from '../model/fps'
 
 const NUM = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/ // decimal only: no hex, Infinity, blanks
 const ROBOT_BY_COLS = { 36: 'g1', 19: 'go2' } as const
@@ -69,28 +70,52 @@ function parseHeaded(head: string[], lines: Line[], defs: RobotDefs): Parsed {
 
 /** True when a header cell is `frequency(fps)` (trimmed, case-insensitive): the headed format that carries its own fps. */
 export const isHeaded = (cells: string[]) => cells.some(c => c.trim().toLowerCase() === 'frequency(fps)')
+const isMotionJson = (text: string) => text.trimStart().startsWith('{')
 export const isHeadedCsv = (text: string) => {
+  if (isMotionJson(text)) return true // carries its own 50fps
   const first = text.split(/\r?\n/).find(l => l.trim())
   return !!first && isHeaded(first.split(','))
 }
 
-// Unitree RL motion CSV -> poses at the file's own fps.
+// go2_motion_clip_v2 JSON (converted from a Unitree CSV): root_local x/y/z + base_quaternion_xyzw + q in `joint_order`.
+function parseMotionJson(text: string, defs: RobotDefs): { robot: RobotKind; fps: number; poses: Pose[] } {
+  let d: any
+  try { d = JSON.parse(text) } catch { throw new Error('JSON을 읽을 수 없습니다') }
+  if (d?.format !== 'go2_motion_clip_v2') throw new Error(`지원하지 않는 JSON 형식입니다: ${d?.format ?? '(없음)'}`)
+  if (d.robot !== 'go2') throw new Error(`지원하지 않는 로봇입니다: ${d.robot}`)
+  const { q, root_local: root, base_quaternion_xyzw: quat, joint_order: order } = d
+  if (!Array.isArray(q) || !Array.isArray(root) || !Array.isArray(quat) || !Array.isArray(order) || !q.length || root.length !== q.length || quat.length !== q.length) throw new Error('프레임 데이터가 올바르지 않습니다')
+  const fps = Number(d.nominal_rate)
+  if (fps !== 30 && fps !== 50 && fps !== 60) throw new Error(`지원하지 않는 fps입니다: ${d.nominal_rate}`)
+  const cols = defs.go2.joints.map(j => order.indexOf(j.name.replace(/_joint$/, '')))
+  const bad = cols.indexOf(-1)
+  if (bad >= 0) throw new Error(`joint_order에 관절이 없습니다: ${defs.go2.joints[bad].name}`)
+  const finite = (a: unknown, n: number) => Array.isArray(a) && a.length >= n && a.slice(0, n).every(v => typeof v === 'number' && Number.isFinite(v))
+  const poses = q.map((qf: number[], i: number): Pose => {
+    if (!finite(qf, order.length) || !finite(root[i], 3) || !finite(quat[i], 4)) throw new Error(`${i + 1}번째 프레임에 숫자가 아닌 값이 있습니다`)
+    return { rootPos: [root[i][0], root[i][1], root[i][2]], rootQuat: quat[i].slice(0, 4) as Quat, q: cols.map(c => qf[c]) }
+  })
+  return { robot: 'go2', fps, poses }
+}
+
+// Unitree RL motion CSV (or go2_motion_clip_v2 JSON) -> poses at the file's own fps.
 // srcFps is only used for the headerless format; the headed one carries its own.
-export function parseCsvPoses(text: string, defs: RobotDefs, srcFps: 30 | 60 | undefined): { robot: RobotKind; fps: number; poses: Pose[] } {
+export function parseCsvPoses(text: string, defs: RobotDefs, srcFps: 30 | 50 | 60 | undefined): { robot: RobotKind; fps: number; poses: Pose[] } {
+  if (isMotionJson(text)) return parseMotionJson(text, defs)
   const lines: Line[] = []
   text.split(/\r?\n/).forEach((line, i) => { if (line.trim()) lines.push({ cells: line.split(',').map(s => s.trim()), n: i + 1 }) })
   if (!lines.length) throw new Error('데이터가 없습니다')
   const headed = isHeaded(lines[0].cells)
   if (headed && lines.length < 2) throw new Error('데이터가 없습니다')
-  const { robot, rows, fps } = headed ? parseHeaded(lines[0].cells, lines.slice(1), defs) : parseHeadless(lines, srcFps ?? 60)
+  const { robot, rows, fps } = headed ? parseHeaded(lines[0].cells, lines.slice(1), defs) : parseHeadless(lines, srcFps ?? FPS)
   return { robot, fps, poses: rows.map(r => ({ rootPos: [r[0], r[1], r[2]], rootQuat: r.slice(3, 7) as Quat, q: r.slice(7) })) }
 }
 
-// Poses at `fps` -> 60fps editable clip with a linear key on every channel/frame.
-// 60fps frame f samples source time f * fps / 60: positions/joints lerped, root quaternion slerped.
+// Poses at `fps` -> project-fps editable clip with a linear key on every channel/frame.
+// project frame f samples source time f * fps / FPS: positions/joints lerped, root quaternion slerped.
 export function posesToClip(poses: Pose[], fps: number, robot: RobotKind, defs: RobotDefs, name: string): Clip {
-  const frames = fps === 60 ? poses : Array.from({ length: Math.floor((poses.length - 1) * 60 / fps) + 1 }, (_, f) => {
-    const t = f * fps / 60, i = Math.floor(t)
+  const frames = fps === FPS ? poses : Array.from({ length: Math.floor((poses.length - 1) * FPS / fps) + 1 }, (_, f) => {
+    const t = f * fps / FPS, i = Math.floor(t)
     return t === i ? poses[i] : blendPose(poses[i], poses[i + 1], t - i)
   })
 
@@ -109,7 +134,7 @@ export function posesToClip(poses: Pose[], fps: number, robot: RobotKind, defs: 
 }
 
 // Unitree RL motion CSV -> editable clip.
-export function csvToClip(text: string, defs: RobotDefs, srcFps: 30 | 60 | undefined, name: string): Clip {
+export function csvToClip(text: string, defs: RobotDefs, srcFps: 30 | 50 | 60 | undefined, name: string): Clip {
   const { robot, fps, poses } = parseCsvPoses(text, defs, srcFps)
   return posesToClip(poses, fps, robot, defs, name)
 }

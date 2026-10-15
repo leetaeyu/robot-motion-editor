@@ -26,8 +26,8 @@ test('g1 csv: header, 41 fields per line incl. trailing comma, time ms, 6 decima
     + defs.g1.joints.map(j => j.name).join(',') + ',')
   expect(rows[0].split(',')).toHaveLength(41)
   expect(rows[1].split(',')).toHaveLength(41)
-  expect(rows[1].split(',').slice(0, 4)).toEqual(['60', '0', '29', '0'])
-  expect(rows.slice(1, 6).map(r => r.split(',')[3])).toEqual(['0', '17', '33', '50', '67'])
+  expect(rows[1].split(',').slice(0, 4)).toEqual(['50', '0', '29', '0'])
+  expect(rows.slice(1, 6).map(r => r.split(',')[3])).toEqual(['0', '20', '40', '60', '80'])
   expect(rows[1].split(',')[4]).toMatch(/^-?\d+\.\d{6}$/)
   expect(rows[1].endsWith(',')).toBe(true)
 })
@@ -35,12 +35,12 @@ test('g1 csv: header, 41 fields per line incl. trailing comma, time ms, 6 decima
 test('go2 csv: 24 fields', () => {
   const csv = posesToCsv(samplePoses(proj, defs, go2.id, itemOf(proj, go2.id).id, 'world'), defs.go2)
   expect(csv.endsWith(',')).toBe(true) // last line ends with a comma and no newline
-  expect(csv.includes(',\n60,')).toBe(true)
+  expect(csv.includes(',\n50,')).toBe(true)
   const lines = csv.split('\n')
   expect(lines[0].split(',')).toHaveLength(24)
   expect(lines[0].split(',')[11]).toBe('FL_hip_joint')
   expect(lines[1].split(',')).toHaveLength(24)
-  expect(lines[1].split(',').slice(0, 3)).toEqual(['60', '1', '12'])
+  expect(lines[1].split(',').slice(0, 3)).toEqual(['50', '1', '12'])
 })
 
 test('itemFrameRange', () => {
@@ -49,7 +49,7 @@ test('itemFrameRange', () => {
 
 test('negative zero written as 0.000000', () => {
   const lines = posesToCsv([{ rootPos: [-0, -1e-9, 0], rootQuat: [0, 0, 0, 1], q: [] }], { ...defs.g1, joints: [] }).split('\n')
-  expect(lines[1]).toBe('60,0,0,0,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,1.000000,')
+  expect(lines[1]).toBe('50,0,0,0,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,1.000000,')
 })
 
 test('local mode: first row x=y=0, yaw=0', () => {

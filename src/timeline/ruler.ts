@@ -5,7 +5,7 @@ export const LABEL_W = 160, RULER_H = 24
 export interface Colors { bg: string; panel: string; line: string; text: string; accent: string }
 
 // [minor, major] frame steps; major labels are >= 60px apart
-const STEPS: [number, number][] = [[1, 1], [1, 2], [1, 5], [5, 10], [5, 15], [10, 30], [10, 60], [30, 120], [60, 300], [60, 600], [300, 1800], [600, 3600]]
+const STEPS: [number, number][] = [[1, 1], [1, 2], [1, 5], [5, 10], [5, 25], [25, 50], [25, 100], [50, 250], [50, 500], [250, 1500], [500, 3000]]
 export function tickStep(ppf: number): { minor: number; major: number } {
   const [minor, major] = STEPS.find(([, M]) => M * ppf >= 60) ?? STEPS[STEPS.length - 1]
   return { minor, major }

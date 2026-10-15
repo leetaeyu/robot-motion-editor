@@ -1,6 +1,7 @@
 import { evaluateClip, type Pose, type RobotDefs } from './pose'
 import { quatMul, quatYaw, yawQuat, type Quat } from './rootMath'
 import type { Item, Project, Track } from './types'
+import { itemClip } from './itemClip'
 
 export interface Xf { x: number; y: number; yaw: number } // clip root -> track coords
 
@@ -66,7 +67,7 @@ export function stitchTransforms(p: Project, defs: RobotDefs, track: Track): Map
   let prev: Item | null = null
   for (const it of items) {
     let xf: Xf = { x: 0, y: 0, yaw: 0 }
-    const clip = p.clips[it.refId], prevClip = prev && p.clips[prev.refId]
+    const clip = itemClip(p, defs, it), prevClip = prev && itemClip(p, defs, prev)
     if (prev && prevClip && clip && actor) {
       const def = defs[actor.robot]
       const pcf = Math.min(Math.max(it.start - prev.start + prev.trimIn, prev.trimIn), prev.trimOut - 1)

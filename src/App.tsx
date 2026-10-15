@@ -8,6 +8,7 @@ import { videoTrack } from './model/video'
 import ProjectPanel from './project/ProjectPanel'
 import Timeline from './timeline/Timeline'
 import ExportDialog from './export/ExportDialog'
+import Go2BlockDialog from './go2blocks/Go2BlockDialog'
 import { startTransport } from './transport'
 import { onMessage } from './projectActions'
 import FileMenu from './FileMenu'
@@ -16,7 +17,7 @@ import { MENUBAR_H, layoutBounds, useLayout, type Layout } from './layout/useLay
 import { tv } from './timeline/viewState'
 
 function AutoKeyHint() {
-  const off = useEditor(s => !s.autoKey && !!s.sel.channel && !s.sel.channel.startsWith('group:'))
+  const off = useEditor(s => s.layer === 'clip' && !s.autoKey && !!s.sel.channel && !s.sel.channel.startsWith('group:')) // 이 조각 수정 keys without 자동 키
   return off ? <div className="stage-hint">자동 키 꺼짐: 기즈모 변경은 저장되지 않습니다</div> : null
 }
 
@@ -31,6 +32,7 @@ function Menubar() {
   const videoMode = useEditor(s => s.videoMode), videoOpacity = useEditor(s => s.videoOpacity)
   const hasVideo = useEditor(s => !!videoTrack(s.project)?.items.length)
   const [exporting, setExporting] = useState(false)
+  const [blocksOpen, setBlocksOpen] = useState(false)
   const name = useEditor(s => s.fileName ?? 'Motion Editor'), dirty = useEditor(s => s.dirty)
   const [msg, setMsg] = useState('')
   const title = name + (dirty ? ' •' : '')
@@ -48,7 +50,7 @@ function Menubar() {
   }, [])
   return (
     <>
-      <FileMenu onExport={() => setExporting(true)} />
+      <FileMenu onExport={() => setExporting(true)} onBlocks={() => setBlocksOpen(true)} />
       <span className="mb-title">{title}</span>
       {msg && <span role="status" className="mb-msg">{msg}</span>}
       {hasVideo && (
@@ -60,6 +62,7 @@ function Menubar() {
         </span>
       )}
       <ExportDialog open={exporting} onClose={() => setExporting(false)} />
+      <Go2BlockDialog open={blocksOpen} onClose={() => setBlocksOpen(false)} />
     </>
   )
 }

@@ -3,6 +3,7 @@ import { relinkMedia, setImportResult, useImportUi } from '../importActions'
 import { mediaUrl, subscribeMedia } from '../media/registry'
 import { getEditor, useEditor } from '../store/store'
 import { setDragged } from '../timeline/assetDrop'
+import { FPS } from '../model/fps'
 
 function RenameInput({ name, onDone }: { name: string; onDone: (v: string | null) => void }) {
   const cancelled = useRef(false)
@@ -78,7 +79,7 @@ export default function ProjectPanel() {
       else if (e.key === 'Enter' && kind === 'clip') { e.stopPropagation(); setRenaming(id) }
     },
   })
-  const sec = (f: number) => `${(f / 60).toFixed(2)}초`
+  const sec = (f: number) => `${(f / FPS).toFixed(2)}초`
 
   return (
     <div className="pp">

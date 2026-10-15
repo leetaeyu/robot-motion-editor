@@ -1,5 +1,6 @@
 import type { RobotDefs } from '../model/evaluate'
 import type { Clip, Project } from '../model/types'
+import { FPS } from '../model/fps'
 
 export interface TimeScale { x0: number; pxPerFrame: number }
 export const frameToX = (s: TimeScale, f: number) => s.x0 + f * s.pxPerFrame
@@ -17,8 +18,8 @@ export function keysIn<K extends { f: number }>(keys: K[], lo: number, hi: numbe
 const p2 = (n: number) => String(n).padStart(2, '0')
 export function formatTimecode(f: number): string {
   if (f < 0) return '-' + formatTimecode(-f)
-  const sec = Math.floor(f / 60)
-  return `${p2(Math.floor(sec / 60))}:${p2(sec % 60)}.${p2(f % 60)}`
+  const sec = Math.floor(f / FPS)
+  return `${p2(Math.floor(sec / 60))}:${p2(sec % 60)}.${p2(f % FPS)}`
 }
 
 export interface Row { kind: 'group' | 'channel'; actorId: string; label: string; channels: string[]; expanded?: boolean }
@@ -42,7 +43,7 @@ export function buildRows(p: Project, defs: RobotDefs, expanded: Set<string>): R
 }
 
 // y is relative to the top of rows[0]; returns clip frames of keys under the point (group rows: every channel key at that frame).
-export function hitKey(rows: Row[], clip: Clip, s: TimeScale, rowH: number, x: number, y: number): { channel: string; f: number }[] | null {
+export function hitKey(rows: Row[], clip: Pick<Clip, 'channels'>, s: TimeScale, rowH: number, x: number, y: number): { channel: string; f: number }[] | null {
   const row = rows[Math.floor(y / rowH)]
   if (!row || y < 0) return null
   const hits: { channel: string; f: number }[] = []

@@ -5,6 +5,7 @@ import { TransformControls } from 'three/examples/jsm/controls/TransformControls
 import { evalCurve } from '../model/curve'
 import { COLOR } from '../model/defaults'
 import { evaluate, evaluateClip, evaluateItem, evaluateRoot } from '../model/evaluate'
+import { itemClip } from '../model/itemClip'
 import { rebasePose } from '../model/pose'
 import { nearestAngle } from '../model/rootMath'
 import { stitchTransforms, worldToClipRoot } from '../model/sequence'
@@ -13,6 +14,7 @@ import { clipLocked, editingItem, editTarget, getEditor, gizmoLock, trackLocked 
 import { sequenceEnd } from '../transport'
 import { buildRobot, pivotAngle, type RobotRig } from './buildRobot'
 import type { RobotDef } from '../robot/types'
+import { FPS } from '../model/fps'
 
 const css = (n: string) => getComputedStyle(document.documentElement).getPropertyValue(n).trim()
 const EXTENT = 5
@@ -41,8 +43,8 @@ function makeGrid(): THREE.LineSegments {
 interface Entry { rig: RobotRig; trail: THREE.Line; dot: THREE.Points; ghost: boolean; trailKey?: string; trailClips?: (Clip | undefined)[] }
 
 /** One 3D view. `compareClipId` = a view-only compare pane: one robot at the origin driven by that clip from sequence frame 0 (no gizmo, picking or actors). Omitted = the main pane (every actor).
- * With `range` = [from, to) clip frames, the compare robot instead loops that range on its own 60 fps clock, root re-based so frame `from` sits at the origin. */
-export default function Stage({ compareClipId: cid, range }: { compareClipId?: string; range?: [number, number] }) {
+ * With `range` = [from, to) clip frames, the compare robot instead loops that range on its own project-fps clock, root re-based so frame `from` sits at the origin. */
+export default function Stage({ compareClipId: cid, range, itemId }: { compareClipId?: string; range?: [number, number]; itemId?: string }) {
   const [lo, hi] = range ?? [0, 0]
   const host = useRef<HTMLDivElement>(null)
 
@@ -125,10 +127,16 @@ export default function Stage({ compareClipId: cid, range }: { compareClipId?: s
       for (const o of [e.rig.root, e.trail, e.dot]) disposeObj(o)
     }
 
+    // the clip a compare pane shows: the original, or (item preview) the piece's clip with its 수정 층
+    const shownClip = () => {
+      const { project, defs } = store.getState(), clip = cid ? project.clips[cid] : undefined
+      const it = itemId ? project.sequence.tracks.flatMap(t => t.items).find(i => i.id === itemId) : undefined
+      return (clip && it && itemClip(project, defs, it)) || clip
+    }
     // compare pane: one rig for the clip at the origin; trail rebuilt only when the clip object changes
     const syncClip = () => {
-      const { project, defs } = store.getState()
-      const clip = cid ? project.clips[cid] : undefined
+      const { defs } = store.getState()
+      const clip = shownClip()
       if (!clip) return
       let e = entries.get(cid!)
       if (!e) {
@@ -150,9 +158,9 @@ export default function Stage({ compareClipId: cid, range }: { compareClipId?: s
       e.trail.geometry = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
     }
     const applyClip = () => {
-      const s = store.getState(), clip = s.project.clips[cid!], e = entries.get(cid!)
+      const s = store.getState(), clip = shownClip(), e = entries.get(cid!)
       if (!clip || !e) return
-      const f = ranged ? lo + Math.floor((performance.now() - t0) * 60 / 1000) % Math.max(hi - lo, 1) : s.frame
+      const f = ranged ? lo + Math.floor((performance.now() - t0) * FPS / 1000) % Math.max(hi - lo, 1) : s.frame
       if (ranged && f === shownF) return
       shownF = f
       const pose = clipPose(clip, s.defs[clip.robot], Math.min(Math.max(f, 0), clip.length - 1))
@@ -249,7 +257,7 @@ export default function Stage({ compareClipId: cid, range }: { compareClipId?: s
       if (rootMode === 'translate') return [['root.x', r.x], ['root.y', r.y], ['root.z', r.z]]
       // euler read-back wraps to (-pi, pi]; keep each angle continuous with the stored channel value
       if (!target) return [['root.roll', r.roll], ['root.pitch', r.pitch], ['root.yaw', r.yaw]]
-      const clip = s.project.clips[target.clipId]
+      const it = track?.items.find(i => i.id === target.itemId), clip = (it && itemClip(s.project, s.defs, it)) || s.project.clips[target.clipId]
       const cur = (ch: string) => evalCurve(clip.channels[ch] ?? { keys: [] }, target.f, 0)
       return [['root.roll', nearestAngle(r.roll, cur('root.roll'))], ['root.pitch', nearestAngle(r.pitch, cur('root.pitch'))], ['root.yaw', nearestAngle(r.yaw, cur('root.yaw'))]]
     }

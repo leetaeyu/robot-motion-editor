@@ -1,9 +1,10 @@
 import { evalCurve, makeKey } from './curve'
 import type { Clip, Curve, Key } from './types'
 import type { RobotDef } from '../robot/types'
+import { FPS } from './fps'
 
 export const REST_HOLD = 30 // max frames held at the rest pose (0.5 s)
-export const REST_BLEND = 60 // max frames easing back into the motion (1 s)
+export const REST_BLEND = FPS // max frames easing back into the motion (1 s)
 
 const ROOT = ['root.x', 'root.y', 'root.z', 'root.roll', 'root.pitch', 'root.yaw']
 const smooth = (t: number) => 3 * t * t - 2 * t * t * t

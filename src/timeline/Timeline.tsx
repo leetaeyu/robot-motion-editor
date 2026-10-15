@@ -5,6 +5,7 @@ import { draggedAsset, dropAssetInClipView, isAssetDrag } from './assetDrop'
 import SequenceCanvas from './SequenceCanvas'
 import TrackCanvas from './TrackCanvas'
 import { formatTimecode } from './timeScale'
+import { FPS } from '../model/fps'
 
 // Transport controls sit with the timeline they drive; the breadcrumb shows only in clip view.
 function TimelineHeader() {
@@ -18,7 +19,7 @@ function TimelineHeader() {
   return (
     <div className="tl-head">
       <button onClick={() => st.setPlaying(!playing)} aria-label={playing ? '정지' : '재생'}>{playing ? '■' : '▶'}</button>
-      <span className="mb-time">{formatTimecode(frame)} / {formatTimecode(end)} · 60fps</span>
+      <span className="mb-time">{formatTimecode(frame)} / {formatTimecode(end)} · {FPS}fps</span>
       <button aria-pressed={autoKey} onClick={st.toggleAutoKey}>자동 키</button>
       <button disabled={!editing} onClick={() => st.setView(view === 'tracks' ? 'graph' : 'tracks')}>{view === 'tracks' ? '트랙' : '그래프'}</button>
       {e && (

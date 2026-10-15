@@ -11,8 +11,8 @@ test('videoTimeAt maps frame to media seconds with trims', () => {
   p.media = [media.m]
   p.sequence.tracks.unshift({ id: 'v', kind: 'video', hidden: false, locked: false, items: [it('i', 120, 60, 300)] })
   expect(videoTimeAt(p, 119)).toBeNull()
-  expect(videoTimeAt(p, 120)).toEqual({ mediaId: 'm', itemId: 'i', seconds: 1 })
-  expect(videoTimeAt(p, 359)?.seconds).toBeCloseTo(299 / 60)
+  expect(videoTimeAt(p, 120)).toEqual({ mediaId: 'm', itemId: 'i', seconds: 1.2 })
+  expect(videoTimeAt(p, 359)?.seconds).toBeCloseTo(299 / 50)
   expect(videoTimeAt(p, 360)).toBeNull()
   expect(videoTimeAt(newProject(), 0)).toBeNull()
 })

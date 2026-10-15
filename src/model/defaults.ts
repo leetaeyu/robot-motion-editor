@@ -1,5 +1,6 @@
 import type { RobotKind } from '../robot/types'
 import type { Actor, Clip, Project, Track } from './types'
+import { FPS } from './fps'
 
 export const COLOR: Record<RobotKind, string> = { g1: '#58B4D1', go2: '#C9D65A' }
 const LABEL: Record<RobotKind, string> = { g1: 'G1', go2: 'GO2' }
@@ -42,7 +43,7 @@ export function addActor(p: Project, robot: RobotKind, withClip = true): Project
 export function newProject(): Project {
   const g = makeActor(null, 'g1', 0), d = makeActor(null, 'go2', 1.5)
   return {
-    version: 2, fps: 60,
+    version: 2, fps: FPS,
     actors: [g.actor, d.actor],
     clips: { [g.clip.id]: g.clip, [d.clip.id]: d.clip },
     media: [],
@@ -51,6 +52,6 @@ export function newProject(): Project {
 }
 
 export const emptyProject = (): Project => ({
-  version: 2, fps: 60, actors: [], clips: {}, media: [],
+  version: 2, fps: FPS, actors: [], clips: {}, media: [],
   sequence: { tracks: [], markers: [], inF: null, outF: null },
 })

@@ -31,6 +31,6 @@ test('load both robots, key, export CSV', async ({ page }) => {
   const g1 = texts.find(t => rows(t)[0].split(',').length === 41)!
   expect(rows(g1)[0].startsWith('frequency(fps),RobotType,DOF Number,time(ms),position X(m),')).toBe(true)
   expect(rows(g1)).toHaveLength(121)
-  expect(rows(g1)[31].split(',').slice(0, 4)).toEqual(['60', '0', '29', '500'])
+  expect(rows(g1)[31].split(',').slice(0, 4)).toEqual(['50', '0', '29', '600'])
   expect(Number(rows(g1)[31].split(',')[11 + 18])).toBeCloseTo(1.0, 5)
 })

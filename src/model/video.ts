@@ -1,5 +1,6 @@
 import { itemLen, sortedItems } from './sequence'
 import type { Item, Media, Project, Track } from './types'
+import { FPS } from './fps'
 
 export const videoTrack = (p: Project): Track | null => p.sequence.tracks.find(t => t.kind === 'video') ?? null
 
@@ -21,5 +22,5 @@ export function validVideoTrack(items: Item[], media: Record<string, Media>): bo
 export function videoTimeAt(p: Project, frame: number): { mediaId: string; seconds: number; itemId: string } | null {
   const t = videoTrack(p)
   const it = t && sortedItems(t).find(i => frame >= i.start && frame < i.start + itemLen(i))
-  return it ? { mediaId: it.refId, seconds: (frame - it.start + it.trimIn) / 60, itemId: it.id } : null
+  return it ? { mediaId: it.refId, seconds: (frame - it.start + it.trimIn) / FPS, itemId: it.id } : null
 }

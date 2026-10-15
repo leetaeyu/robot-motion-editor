@@ -55,10 +55,10 @@ test('import video auto-places on V1 in split view, scrub syncs', async ({ page 
     const e = (window as any).__editor, s = e.getState()
     const v1 = s.project.sequence.tracks.find((t: any) => t.kind === 'video')
     s.moveItem(v1.items[0].id, 60)
-    e.getState().setFrame(90)
+    e.getState().setFrame(85)
   })
   const video = page.locator('#stage video')
-  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => Math.abs(v.currentTime - 0.5) <= 1 / 60), { timeout: 5000 }).toBe(true)
+  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => Math.abs(v.currentTime - 0.5) <= 1 / 50), { timeout: 5000 }).toBe(true)
   await page.evaluate(() => (window as any).__editor.getState().setFrame(30))
   // split keeps the slot but hides the picture outside the item
   await expect.poll(() => video.evaluate((v: HTMLVideoElement) => getComputedStyle(v).visibility)).toBe('hidden')

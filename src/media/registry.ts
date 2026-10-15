@@ -1,5 +1,6 @@
 // Runtime-only video object URLs. Never saved to the project.
 import { revokeUrl } from '../fileio'
+import { FPS } from '../model/fps'
 
 const urls = new Map<string, string>()
 const subs = new Set<() => void>()
@@ -28,7 +29,7 @@ export function probeDuration(url: string): Promise<number> {
     const done = (err: Error | null, d = 0) => {
       clearTimeout(timer)
       v.removeAttribute('src'); v.load()
-      err ? reject(err) : resolve(Math.max(1, Math.round(d * 60)))
+      err ? reject(err) : resolve(Math.max(1, Math.round(d * FPS)))
     }
     v.onloadedmetadata = () => done(Number.isFinite(v.duration) ? null : new Error(UNREADABLE), v.duration)
     v.onerror = () => done(new Error(UNREADABLE))

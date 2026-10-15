@@ -25,7 +25,7 @@ test('import CSV, place two items with crossfade, export all', async ({ page }) 
   const rows = Array.from({ length: 60 }, () => Array.from({ length: 36 }, (_, i) => (i === 0 ? 5 : i === 1 ? 7 : i === 6 ? 1 : 0)).join(','))
   const [fc] = await Promise.all([page.waitForEvent('filechooser'), menu(page, 'CSV 가져오기')])
   await fc.setFiles([{ name: 'walk_g1.csv', mimeType: 'text/csv', buffer: Buffer.from(rows.join('\n') + '\n') }])
-  await page.getByLabel('60fps').check()
+  await page.getByLabel('50fps').check()
   await page.getByRole('button', { name: '가져오기', exact: true }).click()
   await expect(page.locator('.pp-name', { hasText: 'walk_g1' })).toBeVisible()
 

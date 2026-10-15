@@ -17,17 +17,17 @@ test('headerless CSV import: fps choice applies each time, bad file reported, on
   const clips = () => page.evaluate(() => Object.values((window as any).__editor.getState().project.clips) as { name: string; length: number }[])
   expect(await page.evaluate(() => (window as any).__editor.getState().project.actors.length)).toBe(0) // starts empty
   const before = (await clips()).length
-  const run = async (files: { name: string; mimeType: string; buffer: Buffer }[], fps: '30fps' | '60fps') => {
+  const run = async (files: { name: string; mimeType: string; buffer: Buffer }[], fps: '30fps' | '50fps') => {
     const [fc] = await Promise.all([page.waitForEvent('filechooser'), menu(page, 'CSV 가져오기')])
     await fc.setFiles(files)
     await page.getByLabel(fps).check()
     await page.getByRole('button', { name: '가져오기', exact: true }).click()
   }
   await run([{ name: 'a.csv', mimeType: 'text/csv', buffer: csv }], '30fps')
-  await run([{ name: 'b.csv', mimeType: 'text/csv', buffer: csv }, { name: 'bad.csv', mimeType: 'text/csv', buffer: Buffer.from('1,2,3\n') }], '60fps')
+  await run([{ name: 'b.csv', mimeType: 'text/csv', buffer: csv }, { name: 'bad.csv', mimeType: 'text/csv', buffer: Buffer.from('1,2,3\n') }], '50fps')
   await expect(page.locator('.pp-msg')).toContainText('bad.csv: 열 수가')
   const cs = await clips()
-  expect(cs.find(c => c.name === 'a')!.length).toBe(5)
+  expect(cs.find(c => c.name === 'a')!.length).toBe(4)
   expect(cs.find(c => c.name === 'b')!.length).toBe(3)
   expect(cs.length).toBe(before + 2)
   await run([{ name: 'a.csv', mimeType: 'text/csv', buffer: csv }], '30fps')
@@ -50,7 +50,7 @@ test('headed CSV import creates the G1 actor; export reproduces the input', asyn
   const N = 60
   const data = Array.from({ length: N }, (_, i) => {
     const yaw = 0.02 * i, qz = Math.sin(yaw / 2), qw = Math.cos(yaw / 2)
-    return [60, 0, 29, Math.round(i * 1000 / 60), (0.01 * i).toFixed(6), (0.2 * Math.sin(i / 9)).toFixed(6), '0.790000',
+    return [50, 0, 29, Math.round(i * 1000 / 50), (0.01 * i).toFixed(6), (0.2 * Math.sin(i / 9)).toFixed(6), '0.790000',
       '0.000000', '0.000000', qz.toFixed(6), qw.toFixed(6), ...joints.map((_, j) => (0.02 * Math.sin(i / 9 + j)).toFixed(6))].join(',') + ','
   })
   const input = [head, ...data].join('\n') + '\n'
@@ -100,7 +100,7 @@ test('파일 menu: keyboard navigation and focus return', async ({ page }) => {
   await trigger.focus()
   await page.keyboard.press('Enter')
   await expect(trigger).toHaveAttribute('aria-expanded', 'true')
-  await expect(items).toHaveCount(7)
+  await expect(items).toHaveCount(8)
   expect(await focused()).toBe('새 프로젝트')
   await page.keyboard.press('ArrowUp') // wraps to the last
   expect(await focused()).toBe('내보내기')

@@ -55,7 +55,7 @@ function ItemPreview({ id }: { id: string }) {
         <button aria-label="클립 프리뷰 닫기" onClick={() => getEditor().getState().closeItemPreview()}>✕</button>
       </div>
       <div className="stage-3d">
-        <Stage compareClipId={item.refId} range={[item.trimIn, item.trimOut]} />
+        <Stage compareClipId={item.refId} range={[item.trimIn, item.trimOut]} itemId={item.id} />
         <button className="pv-rest" onClick={rest}>기본자세 세팅</button>
         {msg && <div className="pv-msg" role="status">{msg}</div>}
       </div>
